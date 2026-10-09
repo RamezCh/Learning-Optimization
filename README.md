@@ -40,10 +40,10 @@ Price elasticity $\epsilon(p)$ measures the percentage change in demand relative
 $$\epsilon(p) = - \frac{p}{d(p)} \frac{\mathrm{d}d(p)}{\mathrm{d}p}$$
 
 | Elasticity Regime | Value | Economic Implication | Optimal Action |
-| :--- | :--- | :--- | :--- |
-| **Inelastic Demand** | $\epsilon(p) < 1$ | % decrease in demand is smaller than % increase in price | **Increase price** to raise total revenue |
-| **Unitary Elasticity** | $\epsilon(p) = 1$ | Marginal revenue equals zero ($MR = 0$) | **Revenue-maximizing price $p^*$** |
-| **Elastic Demand** | $\epsilon(p) > 1$ | % decrease in demand is larger than % increase in price | **Decrease price** to stimulate demand |
+| :--- | :---: | :--- | :--- |
+| **Inelastic Demand** | $\epsilon(p) < 1$ | Demand drops less (%) than price rises (%) | **Increase price** to raise total revenue |
+| **Unitary Elasticity** | $\epsilon(p) = 1$ | Marginal revenue equals zero ($MR = 0$) | **Revenue-maximizing price** $p^*$ |
+| **Elastic Demand** | $\epsilon(p) > 1$ | Demand drops more (%) than price rises (%) | **Decrease price** to stimulate demand |
 
 ### 1.3 Revenue Maximization & Marginal Revenue
 
@@ -59,13 +59,13 @@ Under a linear price-response curve $d(p) = D - b \cdot p$ (with satiating price
 
 ![Price-Response Curves, Elasticity, and Revenue Maximization](imgs/price_response_plots.png)
 
-* **Panel 1 (Downward Sloping Curve):** Depicts linear demand $d(p) = 100 - 10p$ with maximum demand $D=100$ at $p=\$0$ and zero demand at satiating price $P=\$10$.
+* **Panel 1 (Downward Sloping Curve):** Depicts linear demand $d(p) = 100 - 10p$ with maximum demand $D = 100$ at price $p = 0$ and zero demand at satiating price $P = 10$.
 * **Panel 2 (Elastic vs. Inelastic Demand):** Demonstrates price-sensitive demand curves (high elasticity) versus essential/business demand curves (inelastic).
-* **Panel 3 (Total Revenue & Optimal Price):** Shows total revenue $R(p) = p \cdot d(p)$ achieving its global peak at $p^*=\$5$, exactly where $\epsilon = 1$.
+* **Panel 3 (Total Revenue & Optimal Price):** Shows total revenue $R(p) = p \cdot d(p)$ achieving its global peak at $p^* = 5$, exactly where $\epsilon = 1$.
 
 ### 1.4 Perishable Capacity & Opportunity Cost
 
-In airline revenue management, seats are strictly perishable: inventory cannot be replenished, and unsold seats at departure time $T=100$ have a salvage value of $\$0$ [2]. The effective optimal price must account for the **shadow price (opportunity cost of capacity)** $\mu(t, c)$:
+In airline revenue management, seats are strictly perishable: inventory cannot be replenished, and unsold seats at departure time $T = 100$ have a salvage value of zero. The effective optimal price must account for the **shadow price (opportunity cost of capacity)** $\mu(t, c)$:
 
 $$p^*(t, c) = \arg\max_{p} \left\{ (p - \mu(t, c)) \cdot d(p, t) \right\}$$
 
@@ -100,7 +100,7 @@ Selling Season 1  ... Selling Season 100  Selling Season 1 ... Selling Season 10
 4. **Selling Periods ($1 \dots 100$, plus 101):** Each season consists of 100 discrete daily booking periods.
    > [!NOTE]
    > The simulation platform actually executes **101 time periods** per season so that the algorithm receives feedback (competitor price and realized demand) from period 100. The price returned in period 101 is discarded and not evaluated [1].
-5. **Capacity Constraint:** Both competitors start every season with a fixed inventory of **80 seats** [1, 3]. Inventory cannot be replenished. Unsold seats at period 100 expire with $\$0$ value.
+5. **Capacity Constraint:** Both competitors start every season with a fixed inventory of **80 seats** [1, 3]. Inventory cannot be replenished. Unsold seats at period 100 expire with zero value.
 6. **Winning Metric:** The overall winner is the player with the highest **cumulative total revenue** across all simulations [1, 3].
 
 ### 2.2 Customer Demand & Duopoly Market Dynamics
@@ -132,8 +132,8 @@ Algorithms run autonomously inside isolated sandboxes on AWS infrastructure [1].
 * **Pre-installed Libraries:** `numpy`, `pandas` (2.3.3), `scipy`, `scikit-learn`, `pytorch` (2.5.1), `tensorflow` (2.19.1), `xgboost` (3.0.5), `botorch` (0.15.1), `pyomo` (6.9.4), `glpk` (5.0), and `ipopt` (3.14.19) [1].
 * **Compute Resources:** **1 vCPU**, **512 MB RAM** [1].
 * **Execution Latency:**
-  * Average latency: **$\le 0.2$ seconds** per iteration [1].
-  * Maximum hard limit: **$5.0$ seconds** per single call [1].
+  * Average latency: **≤ 0.2 seconds** per iteration [1].
+  * Maximum hard limit: **5.0 seconds** per single call [1].
 * **Reliability:** Minimum **99% error-free execution** rate required. In case of invalid prices or errors, fallback mechanisms revert to previous period prices or random draws [1].
 * **I/O Policy:** No terminal printing (`stdout` is not logged). File writing must adhere to designated feedback channels [1].
 
@@ -161,13 +161,13 @@ def p(
 #### Argument Definitions:
 
 | Argument | Type | Description |
-| :--- | :--- | :--- |
+| :--- | :---: | :--- |
 | `current_selling_season` | `int` | Current season index ($1 \dots 100$) [1, 3]. |
 | `selling_period_in_current_season` | `int` | Current period index ($1 \dots 100$, up to 101) [1, 3]. |
-| `prices_historical_in_current_season` | `Union[np.ndarray, None]` | 2D array of past prices (`shape: (n_competitors, past_periods)`). Rows index players, columns index periods. `None` in period 1 [1, 3]. |
-| `demand_historical_in_current_season` | `Union[np.ndarray, None]` | 1D array of your own past realized demand (`shape: (past_periods,)`). `None` in period 1 [1, 3]. |
-| `competitor_has_capacity_current_period_in_current_season` | `bool` | `False` if the competitor is out of stock; otherwise `True` [1, 3]. |
-| `information_dump` | `Optional[Any]` | Custom in-memory state object passed back to yourself in the next period. `None` in period 1 of season 1 [1, 3]. |
+| `prices_historical_in_current_season` | `ndarray \| None` | 2D array of shape `(n_competitors, past_periods)`. Rows = players, columns = periods. `None` in period 1 [1, 3]. |
+| `demand_historical_in_current_season` | `ndarray \| None` | 1D array of shape `(past_periods,)` — your own realized demand. `None` in period 1 [1, 3]. |
+| `competitor_has_capacity_...` | `bool` | `False` if the competitor is out of stock; `True` otherwise [1, 3]. |
+| `information_dump` | `Any \| None` | Custom in-memory state object returned to you next period. `None` in period 1 of season 1 [1, 3]. |
 
 ### 3.3 State Persistence & Data Handshake Tiers
 
@@ -214,14 +214,14 @@ def p(
 After every competition run, a comprehensive CSV report is generated containing the following schema [1, 3]:
 
 | Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `competition_id` | `str` / `int` | Unique identifier of the competition run [1, 3]. |
-| `selling_season` | `int` | Season number ($1 \dots 100$) [1, 3]. |
-| `selling_period` | `int` | Period number ($1 \dots 100$) [1, 3]. |
+| :--- | :---: | :--- |
+| `competition_id` | `str / int` | Unique identifier of the competition run [1, 3]. |
+| `selling_season` | `int` | Season number (1–100) [1, 3]. |
+| `selling_period` | `int` | Period number (1–100) [1, 3]. |
 | `competitor_id` | `str` | Name / identifier of rival algorithm [1, 3]. |
 | `price_competitor` | `float` | Price posted by rival in that period [1, 3]. |
 | `price` | `float` | Price posted by our algorithm [1, 3]. |
-| `demand` | `int` | Realized sales volume for our airline ($\text{Revenue} = \text{price} \times \text{demand}$) [1, 3]. |
+| `demand` | `int` | Realized sales volume (Revenue = `price` × `demand`) [1, 3]. |
 | `competitor_has_capacity` | `bool` | Stock availability of rival (`True` / `False`) [1, 3]. |
 | `calculation_duration` | `float` | Algorithm response time in seconds [1, 3]. |
 
@@ -231,48 +231,51 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) implements a four-phase pricing framework designed to exploit market asymmetries, protect perishable inventory, probe customer price elasticity, and maximize revenue during the late-season surge.
 
-```
-  [Periods 1–50]           [Periods 51–70]          [Periods 71–89]           [Periods 90–100]
-Phase 1: Capacity Holdout  Phase 2: Market Probing   Phase 3: High Demand      Phase 4: Safety Pacing Valve
- • Hold ~70% capacity      • Test $75, $90, $105     • Monopoly: $105–$145     • Monitor seats / day
- • Baseline price: $85     • Estimate elasticity     • Duopoly: Undercut/Hold  • Eliminate zero-salvage spoilage
-```
+| | Phase 1: Capacity Holdout | Phase 2: Market Probing | Phase 3: High Demand | Phase 4: Safety Pacing Valve |
+| :--- | :--- | :--- | :--- | :--- |
+| **Periods** | 1–50 | 51–70 | 71–89 | 90–100 |
+| **Strategy** | Hold ~70% capacity | Test \$75, \$90, \$105 | Monopoly: \$105–\$145 | Monitor seats/day |
+| **Details** | Baseline price: \$85 | Estimate elasticity | Duopoly: Undercut/Hold | Eliminate zero-salvage spoilage |
 
 ### 4.1 Phase 1: Early Capacity Holdout (Periods 1–50)
 
-* **Economic Objective:** Poisson arrival rates $\lambda(t)$ are low during early days. Selling early sacrifices inventory for low revenue. We protect **$\sim 70\%$ of capacity (at least 56 seats)** for periods 71–100 [3].
-* **Execution:** Set a firm baseline price of **$\$85.00$**. This filters out low-margin bargain hunters while still capturing occasional high-valuation leisure buyers [2].
+* **Economic Objective:** Poisson arrival rates $\lambda(t)$ are low during early days. Selling early sacrifices inventory for low revenue. We protect **~70% of capacity (at least 56 seats)** for periods 71–100 [3].
+* **Execution:** Set a firm baseline price of **\$85.00**. This filters out low-margin bargain hunters while still capturing occasional high-valuation leisure buyers [2].
 
 ### 4.2 Phase 2: Active Market Probing (Periods 51–70)
 
 * **Economic Objective:** Uncover customer price elasticity $\epsilon(p)$ and rival behavioral patterns before the high-demand surge.
 * **Execution:** Systematically rotate through pricing probes:
-  * **High Probe ($\$105.00$):** Tests high-end reservation price thresholds.
-  * **Baseline ($\$90.00$):** Sustains steady sales pace.
-  * **Low Probe ($\$75.00$):** Measures volume responsiveness and elasticity sensitivity.
+  * **High Probe (\$105.00):** Tests high-end reservation price thresholds.
+  * **Baseline (\$90.00):** Sustains steady sales pace.
+  * **Low Probe (\$75.00):** Measures volume responsiveness and elasticity sensitivity.
 * Realized sales and competitor responses are logged into `information_dump` to refine elasticity estimates.
 
 ### 4.3 Phase 3: High-Demand & Monopoly Exploitation (Periods 71–90)
 
-* **Economic Objective:** Poisson arrivals reach peak intensity $\lambda(t)$, and business travelers exhibit steep willingness to pay (up to $\$150.00$) [2, 3].
+* **Economic Objective:** Poisson arrivals reach peak intensity $\lambda(t)$, and business travelers exhibit steep willingness to pay (up to \$150.00) [2, 3].
 * **Monopoly Regime (`competitor_has_capacity == False`):**
   * Competitor has sold out. With zero rival alternatives, we price along the pure monopoly demand curve:
-    * $\le 15$ seats remaining: **$\$145.00$** (extreme scarcity premium).
-    * $16 \dots 35$ seats remaining: **$\$125.00$** (balanced extraction).
-    * $> 35$ seats remaining: **$\$105.00$** (accelerated volume absorption).
+    * ≤ 15 seats remaining: **\$145.00** (extreme scarcity premium).
+    * 16–35 seats remaining: **\$125.00** (balanced extraction).
+    * Over 35 seats remaining: **\$105.00** (accelerated volume absorption).
 * **Duopoly Regime (`competitor_has_capacity == True`):**
-  * **Rival Pricing High ($\ge \$120.00$):** Slightly undercut ($p_{\text{rival}} - \$5.00$) to capture high-margin demand.
-  * **Rival Dumping ($\le \$70.00$):** Do not follow into a destructive price war. Hold price firm at **$\$105.00$**, allowing the competitor to rapidly deplete their 80 seats and hand us the monopoly for the remaining periods.
-  * **Rival Balanced ($\$70.00 < p_{\text{rival}} < \$120.00$):** Post $\max(\$85.00, p_{\text{rival}} - \$2.00)$ to maintain competitive market share.
+  * **Rival Pricing High (≥ \$120.00):** Slightly undercut ($p_{\text{rival}} - 5$) to capture high-margin demand.
+  * **Rival Dumping (≤ \$70.00):** Do not follow into a destructive price war. Hold price firm at **\$105.00**, allowing the competitor to rapidly deplete their 80 seats and hand us the monopoly for the remaining periods.
+  * **Rival Balanced (\$70.00 to \$120.00):** Post $\max(85,\; p_{\text{rival}} - 2)$ to maintain competitive market share.
 
 ### 4.4 Phase 4: Dynamic Safety Pacing Valve (Periods 90–100)
 
-* **Economic Objective:** Eliminate seat spoilage. At period 100, unsold seats yield $\$0.00$ [2].
+* **Economic Objective:** Eliminate seat spoilage. At period 100, unsold seats yield \$0.00 [2].
 * **Execution:** Compute the burn rate ratio:
-  $$\text{Burn Rate} = \frac{\text{Remaining Capacity}}{\max(1, 101 - t)}$$
-  If $\text{Burn Rate} > 1.5$ seats/day, trigger the pacing valve by discounting price proportionally:
-  $$p_{\text{valve}} = \max\left(60.0, p_{\text{target}} - (\text{Burn Rate} \times 10.0)\right)$$
-  ensuring full inventory clearance while preserving the $\$60.00$ price floor.
+
+$$\text{Burn Rate} = \frac{\text{Remaining Capacity}}{\max(1,\; 101 - t)}$$
+
+If Burn Rate > 1.5 seats/day, trigger the pacing valve by discounting price proportionally:
+
+$$p_{\text{valve}} = \max\!\left(60,\; p_{\text{target}} - \text{Burn Rate} \times 10\right)$$
+
+ensuring full inventory clearance while preserving the \$60.00 price floor.
 
 ![DPC Dynamic Pricing Strategy and Capacity Trajectory](imgs/dpc_strategy_visualization.png)
 
@@ -289,10 +292,10 @@ Before submitting [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT
 
 - [x] File named strictly `duopoly.py`.
 - [x] Pricing function `p(...)` adheres to the exact signature and argument types.
-- [x] Output price is clipped within valid competition bounds ($[\$30.00, \$150.00]$).
+- [x] Output price is clipped within valid competition bounds (\$30.00–\$150.00).
 - [x] Handles `None` inputs on period 1 (`prices_historical`, `demand_historical`).
 - [x] Handles period 101 gracefully without throwing exceptions.
-- [x] Average execution latency well below the 0.2-second limit ($\approx 0.001$s per call).
+- [x] Average execution latency well below the 0.2-second limit (~0.001s per call).
 - [x] Memory usage within 512 MB.
 - [x] No unauthorized file system writes or terminal output logging.
 
@@ -301,12 +304,54 @@ Before submitting [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT
 1. Log in to [dynamic-pricing-competition.com](https://www.dynamic-pricing-competition.com/).
 2. Navigate to **File Manager** in the dashboard.
 3. Upload `duopoly.py` (and any auxiliary pickled model files).
-4. Inspect cloud test run results and error logs generated after $\sim 15$ minutes.
+4. Inspect cloud test run results and error logs generated after ~15 minutes.
 5. Review daily leaderboard rankings and download the detailed simulation CSV log.
 
 ---
 
-## 6. References & Literature
+## 6. Glossary of Business, Microeconomic & Technical Terms
+
+Below is an executive glossary defining key economic, revenue management, and competition concepts in plain language for non-specialists.
+
+### 6.1 Market & Economic Concepts
+
+| Term | Plain-Language Definition | Practical Meaning in the Competition |
+| :--- | :--- | :--- |
+| **Market Size ($D$)** | The total number of potential customers looking for a flight ticket during a given time period. | Sets the ceiling on how many tickets can possibly be sold in that day if prices are accessible. |
+| **Willingness to Pay (WTP)** | The maximum dollar amount an individual customer is prepared to spend on a seat (also called *Reservation Price*). | If ticket price exceeds a buyer's WTP, they walk away without buying. If price is at or below WTP, they consider purchasing. |
+| **Consumer Surplus** | The perceived financial gain a customer enjoys when paying less than their maximum WTP. | If a traveler valued the flight at \$120 and bought it for \$85, their consumer surplus is \$35. Lower prices create higher surplus. |
+| **Price Elasticity of Demand ($\epsilon$)** | A measure of how strongly customer purchase decisions react to changes in ticket price. | High elasticity means raising prices drives customers away. Low elasticity means customers need the seat urgently and tolerate high prices. |
+| **Inelastic Demand** | When a percentage increase in price causes only a small drop in sales volume. | Characteristic of late-booking business flyers. Raising prices increases total revenue. |
+| **Elastic Demand** | When a percentage increase in price causes a large drop in sales volume. | Characteristic of early vacationers with flexible plans. Lowering prices stimulates sales volume. |
+| **Marginal Revenue ($MR$)** | The net extra revenue generated by selling one additional seat. | Revenue is maximized at the exact price point where marginal revenue drops to zero ($MR = 0$). |
+
+### 6.2 Revenue Management & Airline Operations
+
+| Term | Plain-Language Definition | Practical Meaning in the Competition |
+| :--- | :--- | :--- |
+| **Dynamic Pricing** | The practice of adjusting prices in real time based on demand fluctuations, remaining time, and inventory levels. | Instead of charging one static fare, our algorithm continuously sets optimal prices for all 100 booking periods. |
+| **Perishable Inventory** | Goods or services that expire and become completely worthless after a fixed date or event. | Airline seats are strictly perishable: once the aircraft takes off, an unsold seat has zero utility and cannot be recovered. |
+| **Seat Spoilage** | Leaving seats empty and unsold when the flight departs at period 100. | Spoilage is wasted potential revenue; our Phase 4 Safety Valve actively prevents this by discounting prices if seats remain late. |
+| **Salvage Value** | The residual value of unsold stock after the sales period concludes. | In airline booking, salvage value is exactly \$0. Unsold inventory cannot be discounted or sold after departure. |
+| **Opportunity Cost / Shadow Price ($\mu$)** | The hidden economic cost of selling a seat today instead of reserving it for a potentially higher-paying buyer tomorrow. | Selling a seat early for \$85 carries an opportunity cost if a business traveler would have paid \$145 in period 90. |
+| **Poisson Arrival Process ($\lambda$)** | A standard statistical model describing how random events (customer arrivals) occur over time at an average rate $\lambda$. | Models passenger booking traffic, which starts as a slow trickle early on and escalates sharply in days 80–100. |
+| **Burn Rate** | The pace at which remaining seats must sell each day to completely sell out before departure. | Calculated as Remaining Capacity divided by Days Left. A burn rate above 1.5 indicates seats are selling too slowly. |
+| **Safety Pacing Valve** | An automated algorithmic override that lowers prices if inventory is selling slower than the target trajectory. | Ensures inventory clears before period 100 without initiating an unnecessary price war earlier in the season. |
+
+### 6.3 Duopoly Game & Technical Architecture
+
+| Term | Plain-Language Definition | Practical Meaning in the Competition |
+| :--- | :--- | :--- |
+| **Duopoly** | A market structure where exactly two commercial competitors supply the entire market. | Player A and Player B share all market arrivals; pricing decisions directly affect each other's sales volume. |
+| **Monopoly** | A market structure with only a single supplier and zero competing alternatives. | When a rival exhausts all 80 seats, we become the monopoly seller and can charge up to \$145 without risk of being undercut. |
+| **Price Dumping** | Aggressively undercutting prices to capture short-term volume at unsustainably low margins. | If a rival dumps tickets below \$70, we do not follow them; we let them deplete their inventory early and hand us the monopoly. |
+| **Selling Season** | One complete 100-day booking timeline for a single scheduled flight departure. | Each competition simulation repeats 100 seasons with identical market parameters, allowing cross-season learning. |
+| **Selling Period** | A single day or time step within the 100-day booking timeline. | There are 100 active periods plus period 101, which delivers final feedback from period 100. |
+| **Information Dump (`information_dump`)** | A persistent Python data structure passed between consecutive decision steps. | Enables our algorithm to store state across periods and seasons without violating Docker sandbox memory constraints. |
+
+---
+
+## 7. References & Literature
 
 * **[1] Dynamic Pricing Competition (DPC)** (2025/2026). *Rules, Architecture & Getting Started Guide*. Available at: [dynamic-pricing-competition.com](https://www.dynamic-pricing-competition.com/).
 * **[2] Phillips, Robert L.** (2005 / 2021). *Pricing and Revenue Optimization*. Stanford University Press, Stanford Business Books. ISBN: 978-0804746984.
