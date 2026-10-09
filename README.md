@@ -67,7 +67,7 @@ Under a linear price-response curve $d(p) = D - b \cdot p$ (with satiating price
 
 In airline revenue management, seats are strictly perishable: inventory cannot be replenished, and unsold seats at departure time $T = 100$ have a salvage value of zero. The effective optimal price must account for the **shadow price (opportunity cost of capacity)** $\mu(t, c)$:
 
-$$p^*(t, c) = \arg\max_{p} \left\{ (p - \mu(t, c)) \cdot d(p, t) \right\}$$
+$$p^*(t, c) = \arg\max_{p} \left[ (p - \mu(t, c)) \cdot d(p, t) \right]$$
 
 As remaining capacity $c$ diminishes relative to remaining periods $T - t$, the shadow price $\mu(t, c)$ escalates, justifying higher price thresholds to protect inventory for high-value business travelers arriving late in the season [2].
 
