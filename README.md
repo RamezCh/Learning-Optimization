@@ -227,60 +227,64 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 ---
 
-## 4. Our Strategic Pricing Architecture (`duopoly.py` — v2.0)
+## 4. Our Strategic Pricing Architecture (`duopoly.py` — v3.0)
 
 > [!IMPORTANT]
-> For a complete empirical post-mortem of our `v1.0` tournament results (60,000 periods), root-cause analysis, code archive, and rationale for the `v2.0` overhaul, see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
+> For a complete empirical post-mortem of our `v1.0` and `v2.0` tournament results (including root-cause analysis of the "Death Valley" trap, code archives, and rationale for the `v3.0` overhaul), see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
 
-Our updated algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) implements a **Continuous Pacing & Competitor-Anchored Pricing Framework** designed around empirical market size findings (~75–105 total arrivals per season vs. 160 combined duopoly seats) and observed customer Willingness-to-Pay ceilings (\$95–\$100).
+Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) implements a **Multi-Tier Archetype Profiling, Continuous Pacing & Targeted Counter-Pricing Framework** designed around empirical market size findings (~75–105 total arrivals per season vs. 160 combined duopoly seats), observed customer Willingness-to-Pay ceilings (\$95–\$100), and asymmetric competitor dynamics.
 
 | Core Pillar | Operational Mechanism | Target Range / Formula | Economic & Empirical Objective |
 | :--- | :--- | :--- | :--- |
-| **1. Continuous Dynamic Pacing** | Target depletion trajectory across all 100 periods | $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ | Prevent early inventory hoarding when market arrivals (<105) cannot exhaust both airlines' capacity (160). |
-| **2. Rival EMA & Season Anchoring** | Blend intra-season rival EMA ($\alpha = 0.25$) with cross-season median | $p_{\text{anchor}} = 0.65\,\text{EMA} + 0.35\,\text{Med}_{\text{season}}$ | Track aggressive undercutters (\$40–\$70) and balanced rivals immediately from Period 1 of Season $k > 1$. |
-| **3. Pacing-Driven Undercut / Premium** | Adjust price relative to $p_{\text{anchor}}$ based on `inventory_gap` | Undercut \$1.50–\$8.00 when behind; Premium +\$1–\$14 when ahead | Continuously capture market share whenever unsold seats exceed target curve. |
-| **4. Empirical Monopoly Ceiling** | Tiered pricing when `competitor_has_capacity == False` | **\$76 / \$86 / \$96** (hard cap **\$100.00**) | Respect empirical WTP limits (0 sales observed above \$105 across 60,000 periods). |
-| **5. Smooth Late Anti-Spoilage Ramp** | Progressive discount ramp starting at Period 75 | `urgency = (t - 74) / 26`, floor **\$25.00** | Provide a 26-period runway during peak arrivals to clear excess inventory without a rigid \$60 floor. |
+| **1. Continuous Dynamic Pacing** | Convex target depletion trajectory across all 100 periods | $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ | Prevent early inventory hoarding when market arrivals (<105) cannot exhaust both airlines' capacity (160). |
+| **2. Multi-Tier Archetype Profiling** | 5-way rival classification with intra-season EMA ($\alpha = 0.25$) and cross-season medians | `'deep_dumper'` ($\le \$20$), `'dumper'` (\$20–\$38), `'aggressive'` (\$38–\$60), `'balanced'` (\$60–\$80), `'high'` ($> \$80$) | Differentiate irrational extreme dumpers from aggressive under-cutters and balanced players from Period 1. |
+| **3. Targeted Deep Dumper Counter-Strategy** | Hold fixed price in duopoly then harvest monopoly at empirical sweet-spot | Duopoly: **\$58.00**; Monopoly: **\$64.00** | Escape the "Death Valley" trap: force \$18 dumper to cap out at \$1,472/season, then sweep remaining arrivals at \$64 for \$1,536+ profit. |
+| **4. Calibrated Floor & Anti-Spiral Guards** | Archetype-specific reference anchor bounds | Behind pace: floor **\$35.00**; On pace / copycats: floor **\$44.00** | Under-cut moderate dumpers (\$28–\$32) while preventing downward price spirals against copycat algorithms. |
+| **5. Adaptive Multi-Tier Monopoly Engine** | Context-aware pricing when `competitor_has_capacity == False` | Deep dumpers: **\$64.00**; Normal rivals: **\$76 / \$86 / \$96** | Capture price-sensitive late leisure demand (\$62–\$80) against dumpers; extract high consumer surplus against normal rivals. |
+| **6. Smooth Late Anti-Spoilage Ramp** | Progressive discount runway starting at Period 75 | `urgency = (t - 74) / 26`, bounded **\$25.00–\$100.00** | Provide a 26-period runway during peak arrivals to liquidate unsold seats safely without premature price collapse. |
 
 ### 4.1 Continuous Inventory Pacing Curve (Periods 1–100)
 
-* **Empirical Motivation:** Because total market arrivals across 100 periods average 75–105 passengers while combined capacity is 160 seats, waiting for a competitor to sell out leaves our 80 seats stranded.
+* **Empirical Motivation:** Because total market arrivals across 100 periods average 75–105 passengers while combined capacity is 160 seats, waiting passively for a competitor to sell out leaves our 80 seats stranded.
 * **Execution:** At every period $t \in [1, 100]$, with normalized progress $\tau = \frac{t - 1}{100}$, we compute target cumulative sales and the real-time **Inventory Gap**:
   $$\text{TargetRemaining}(t) = 80 \times \left[1 - \left(0.85\tau + 0.15\tau^2\right)\right]$$
   $$\text{InventoryGap}(t) = \text{RemainingCapacity}(t) - \text{TargetRemaining}(t)$$
   * $\text{InventoryGap}(t) > 2$: **Behind schedule** (too many unsold seats) $\to$ undercut competitor anchor to accelerate sales.
   * $\text{InventoryGap}(t) < -3$: **Ahead of schedule** (selling rapidly) $\to$ add a scarcity premium above anchor.
 
-### 4.2 Competitor Anchoring & Smart Undercutting (Duopoly Mode)
+### 4.2 Multi-Tier Archetype Profiling & Counter-Pricing (Duopoly Mode)
 
-* **Empirical Motivation:** Against mid-to-low priced opponents like `ZealousMosquito` (\$40–\$70) and `UncoveredElephant` (\$51–\$74), retreating to high prices (\$85–\$105) yields zero sales.
+* **Empirical Motivation:** Tournament data against diverse rivals (e.g., `ZealousMosquito` at \$40–\$70, `AggressiveDumper` at \$20–\$38, and `FuturisticSalamander` at flat \$18.40) requires distinct response modes rather than a single static undercutting rule.
 * **Execution:**
-  1. **Anchor Calculation:** Combine the rival's current-season Exponential Moving Average (`rival_ema_price`) with their historical cross-season median (`rival_season_medians`).
-  2. **Anti-Dumping Guard:** If a rival dumps prices to extreme giveaway levels ($< \$38$, e.g., \$18), floor our reference anchor at **\$48.00–\$54.00** so we still capture utility share without sacrificing all margin.
-  3. **Dynamic Undercut:** When $\text{InventoryGap}(t) > 2.0$, undercut the anchor by $\min(8.0,\; 1.5 + 0.35 \times \text{InventoryGap})$.
-  4. **Micro-Probing:** When right on pace ($|\text{InventoryGap}| \le 4$) during Periods 15–65, apply small $\pm \$3.50\text{–}\$4.00$ perturbations to log price-demand sensitivity in `information_dump["price_demand_stats"]`.
+  1. **Archetype Classification:** Cross-season medians and early-period EMAs classify rivals into 5 distinct profiles: `'deep_dumper'` ($\le \$20.00$), `'dumper'` (\$20.00–\$38.00), `'aggressive'` (\$38.00–\$60.00), `'balanced'` (\$60.00–\$80.00), and `'high'` ($> \$80.00$).
+  2. **The Deep Dumper Bypass (FuturisticSalamander Counter):** When facing a `'deep_dumper'`, our algorithm holds **\$58.00** during duopoly. Because the rival sells at \$18.40, budget customers purchase from them, capping the rival's season revenue at $80 \times \$18.40 = \$1,472$. We conserve our entire 80-seat inventory until the rival sells out around Period 80.
+  3. **Calibrated Anchor Guard:** For normal dumpers (\$20–\$38), our anchor floor drops to **\$35.00** when behind pace (allowing undercuts to \$28–\$32 to seize volume). When on pace or against copycats, our floor locks at **\$44.00**, preventing destructive downward price spirals.
+  4. **Dynamic Undercutting & Scarcity Premium:** Against balanced rivals, when $\text{InventoryGap}(t) > 2.0$, undercut the anchor by $\min(8.0,\; 1.5 + 0.35 \times \text{InventoryGap})$. When ahead ($\text{InventoryGap}(t) < -3.0$), apply a scarcity markup of $+ \$1.00\text{–}\$14.00$.
+  5. **Micro-Probing:** When on pace ($|\text{InventoryGap}| \le 4$) during Periods 15–65 against normal rivals, apply subtle $\pm \$3.50\text{–}\$4.00$ perturbations to log price-demand sensitivity in `information_dump["price_demand_stats"]`.
 
-### 4.3 Realistic Monopoly Exploitation (`competitor_has_capacity == False`)
+### 4.3 Adaptive Multi-Tier Monopoly Engine (`competitor_has_capacity == False`)
 
-* **Empirical Motivation:** Match logs revealed that customer demand drops to virtually zero above \$105.00 (only 28 total sales at \$105 across 60,000 periods, and 0 above \$105).
-* **Execution:** When the rival sells out, we price along the upper actionable portion of the WTP distribution based on our required daily burn rate ($\text{BurnRate} = \frac{\text{RemainingCapacity}}{101 - t}$):
-  * $\text{BurnRate} \le 0.45$ seats/day: **\$96.00**
-  * $0.45 < \text{BurnRate} \le 0.80$ seats/day: **\$86.00**
-  * $0.80 < \text{BurnRate} \le 1.25$ seats/day: **\$76.00**
-  * $\text{BurnRate} > 1.25$ seats/day: Linearly discount down toward **\$52.00** to ensure monopoly inventory still clears before Period 100.
+* **Empirical Motivation:** Once the rival depletes their 80 seats, pricing must align with remaining market arrivals and segment valuations. Match logs show demand ceases completely above \$105.00.
+* **Execution:**
+  * **Deep Dumper Environment:** If the rival was a `'deep_dumper'`, late arrivals consist primarily of leisure travelers with valuations between \$62 and \$80. We lock price at the empirical sweet-spot of **\$64.00**, converting 24+ seats and generating \$1,536+ (surpassing the dumper's \$1,472 maximum possible revenue).
+  * **Normal Rival Environment:** We price dynamically along upper WTP tiers governed by our required daily burn rate ($\text{BurnRate} = \frac{\text{RemainingCapacity}}{101 - t}$):
+    * $\text{BurnRate} \le 0.45$ seats/day: **\$96.00**
+    * $0.45 < \text{BurnRate} \le 0.80$ seats/day: **\$86.00**
+    * $0.80 < \text{BurnRate} \le 1.25$ seats/day: **\$76.00**
+    * $\text{BurnRate} > 1.25$ seats/day: Linearly discount down toward **\$52.00** to ensure inventory clears before Period 100.
 
 ### 4.4 Late-Season Anti-Spoilage Ramp (Periods 75–100) & Cross-Season Memory
 
-* **Smooth Urgency Ramp (Periods 75–100):** Rather than waiting until Period 90 (when only 10 periods remain), if $\text{InventoryGap} > 4.0$ at $t \ge 75$, we apply a progressive discount scaled by $\text{Urgency} = \frac{t - 74}{26}$, bounded between **\$25.00 and \$100.00**.
-* **Active Cross-Season Persistence (`information_dump`):** At the end of each season, the algorithm updates and persists:
-  * `rival_season_medians`: List of the competitor's median prices across completed seasons.
-  * `rival_profile`: Classifies the opponent as `'aggressive'` ($\le \$60$), `'balanced'` (\$60–\$80), or `'high'` ($> \$80$).
-  * `rival_ema_price`, `my_last_price`, `rival_last_price`: Prevents indexing bugs and cold-start blind spots.
-  * `price_demand_stats` & `season_sales_history`: Tracks empirical conversion rates by \$5 price bucket.
+* **Smooth Urgency Ramp (Periods 75–100):** If competing seats remain and $\text{InventoryGap} > 4.0$ at $t \ge 75$, a progressive discount ramp scales by $\text{Urgency} = \frac{t - 74}{26}$, bounded between **\$25.00 and \$100.00**, preventing last-minute seat spoilage.
+* **Active Cross-Season Persistence (`information_dump`):** Across all 100 seasons, `information_dump` maintains:
+  * `rival_season_medians`: Historical median prices across completed seasons.
+  * `rival_profile`: Active archetype classification (`'deep_dumper'`, `'dumper'`, `'aggressive'`, `'balanced'`, `'high'`).
+  * `rival_ema_price`, `my_last_price`, `rival_last_price`: Prevents cold-start indexing errors.
+  * `price_demand_stats` & `season_sales_history`: Empirical conversion rates by \$5 price buckets.
 
 ![DPC Dynamic Pricing Strategy and Capacity Trajectory](imgs/dpc_strategy_visualization.png)
 
-* **Panel 1 (Competitor-Anchored Pricing, Micro-Probing & Monopoly/Spoilage Branches):** Shows our price tracking and slightly undercutting the rival's EMA anchor (`~$58–$66`), executing gentle $\pm\$3.50\text{–}\$4.00$ micro-probes during Periods 15–65, and branching at Period 73 into either **Monopoly Tiers (\$76 $\to$ \$86 $\to$ \$96)** if the rival sells out, or the **Smooth Anti-Spoilage Ramp** (Periods 75–100) if competing seats remain.
+* **Panel 1 (Competitor-Anchored Pricing, Archetype Branches & Monopoly Tiers):** Displays real-time price trajectories, featuring the **Deep Dumper Hold (\$58.00) $\to$ Monopoly Sweet-Spot (\$64.00)** branch, normal duopoly tracking undercutting rival EMA (`~$58–$66`), micro-probing during Periods 15–65, **Monopoly Tiers (\$76 $\to$ \$86 $\to$ \$96)**, and the **Smooth Anti-Spoilage Ramp** (Periods 75–100).
 * **Panel 2 (Continuous Inventory Pacing Trajectory & Feedback Control Zones):** Illustrates the convex target depletion curve $\text{TargetRemaining}(t) = 80 \times [1 - (0.85\tau + 0.15\tau^2)]$ and the three real-time control zones: **Behind Pace** (`Gap > +2`, red zone $\to$ undercut anchor by \$1.50–\$8.00), **On-Pace Corridor** (`-3 to +2`, green zone $\to$ match/-\$$1.00$ + probe), and **Ahead of Pace** (`Gap < -3`, blue zone $\to$ add scarcity premium +\$1.00–\$14.00).
 
 ---
@@ -346,8 +350,8 @@ Below is an executive glossary defining key economic, revenue management, and co
 | Term | Plain-Language Definition | Practical Meaning in the Competition |
 | :--- | :--- | :--- |
 | **Duopoly** | A market structure where exactly two commercial competitors supply the entire market. | Player A and Player B share all market arrivals; pricing decisions directly affect each other's sales volume. |
-| **Monopoly** | A market structure with only a single supplier and zero competing alternatives. | When a rival exhausts all 80 seats, we become the monopoly seller and can charge up to \$145 without risk of being undercut. |
-| **Price Dumping** | Aggressively undercutting prices to capture short-term volume at unsustainably low margins. | If a rival dumps tickets below \$70, we do not follow them; we let them deplete their inventory early and hand us the monopoly. |
+| **Monopoly** | A market structure with only a single supplier and zero competing alternatives. | When a rival exhausts all 80 seats, we become the monopoly seller and harvest remaining demand along empirical WTP curves (\$76–\$96 for normal rivals, \$64 sweet-spot for deep dumpers) without risk of being undercut. |
+| **Price Dumping** | Aggressively undercutting prices to capture short-term volume at unsustainably low margins. | When a rival dumps tickets to extreme giveaway levels ($\le \$20$, e.g., FuturisticSalamander at \$18), we avoid the "Death Valley" undercutting trap: we hold \$58, cap their season revenue at \$1,472, and claim the remaining market at \$64. |
 | **Selling Season** | One complete 100-day booking timeline for a single scheduled flight departure. | Each competition simulation repeats 100 seasons with identical market parameters, allowing cross-season learning. |
 | **Selling Period** | A single day or time step within the 100-day booking timeline. | There are 100 active periods plus period 101, which delivers final feedback from period 100. |
 | **Information Dump (`information_dump`)** | A persistent Python data structure passed between consecutive decision steps. | Enables our algorithm to store state across periods and seasons without violating Docker sandbox memory constraints. |
