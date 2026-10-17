@@ -234,15 +234,17 @@ flowchart TD
 
 ---
 
-## 9. Empirical Willingness-to-Pay (WTP) Segment Analysis (130,000 Periods)
+## 9. Willingness-to-Pay (WTP) Segment Analysis & Ground-Truth Alignment
 
-Analyzing all 30,143 purchase transactions across `data/v1` and `data/v3`:
+According to the official DPC specification (*Prof. Dr. Thomas Winter & Dr. Alwin Haensel*), the underlying customer utility model randomly parameterizes the mix of three distinct customer tiers per simulation: **"Up to Low"** (~$0–$50), **"Up to Mid"** (~$0–$85), and **"Up to High"** (~$0–$150).
 
-| WTP Segment | Price Range | % of All Sales | Median Sold Price | Expected Rev / Period | Economic Implication |
+Analyzing all 30,143 realized purchase transactions across 130,000 empirical competition periods (`data/v1` and `data/v3`):
+
+| WTP Segment (Course Ground-Truth) | Price Range | % of All Sales | Median Sold Price | Expected Rev / Period | Strategic Role in `v4.1` |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **Budget** | **\$25 – \$55** | **85.0%** | **\$38.70** | **\$32.33 – \$46.51** | Drives 85% of volume. Sweet spot is **\$48–\$54**. |
-| **Leisure** | **\$55 – \$80** | **12.0%** | **\$62.50** | **\$12.18 – \$36.90** | Captured mid-season and early monopoly (**\$75–\$80**). |
-| **Business** | **\$80 – \$105** | **3.0%** | **\$85.00** | **\$0.19 – \$3.36** | Only converted when stock is scarce late in season. |
+| **Budget ("Up to Low")** | **\$25 – \$55** | **85.0%** | **\$38.70** | **\$32.33 – \$46.51** | Drives 85% of volume. Pacing sweet spot is **\$48–\$54**. Captured via circuit breaker if holdout fails. |
+| **Leisure ("Up to Mid")** | **\$55 – \$80** | **12.0%** | **\$62.50** | **\$12.18 – \$36.90** | Captured mid-season and early monopoly (**\$78 $\rightarrow$ \$72**). Capped at \$54 if rival is high. |
+| **Business ("Up to High")** | **\$80 – \$105+** | **3.0%** | **\$85.00** | **\$0.19 – \$3.36** | Inelastic demand. Only skimmed at the onset of monopoly when inventory burn-rate is very low. |
 
 ![DPC Strategy Visualization](imgs/dpc_strategy_visualization.png)
 

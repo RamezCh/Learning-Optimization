@@ -182,13 +182,15 @@ def p(
             else:
                 target_price = 64.0 if required_burn_rate <= 1.2 else 58.0
         else:
-            # Realigned empirical monopoly tiers (peak yield at $78-$84, never $96!)
-            if required_burn_rate <= 0.50:
-                target_price = 84.0
+            # Realigned monopoly tiers matching customer WTP distribution (Slide 6)
+            if required_burn_rate <= 0.35 and remaining_capacity <= 8:
+                target_price = 92.0  # Safe edge testing: harvest "Up to High" buyers when seats are scarce
+            elif required_burn_rate <= 0.55:
+                target_price = 84.0  # Upper leisure tier
             elif required_burn_rate <= 0.85:
-                target_price = 78.0
+                target_price = 78.0  # Core leisure yield
             elif required_burn_rate <= 1.25:
-                target_price = 72.0
+                target_price = 72.0  # Mid leisure transition
             else:
                 target_price = max(48.0, 72.0 - (required_burn_rate - 1.25) * 12.0)
 
@@ -248,9 +250,9 @@ def p(
                 target_price = min(target_price, anchor_price - 2.0) - spoilage_discount
 
     # -------------------------------------------------------------------------
-    # 7. Clip to Viable Bounds ($25.0 - $95.0) & Persist State
+    # 7. Clip to Viable Bounds ($25.0 - $100.0) & Persist State
     # -------------------------------------------------------------------------
-    final_price = float(np.clip(target_price, 25.0, 95.0))
+    final_price = float(np.clip(target_price, 25.0, 100.0))
     information_dump["my_last_price"] = final_price
     information_dump["last_period_priced"] = t
     

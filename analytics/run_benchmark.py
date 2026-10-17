@@ -35,7 +35,7 @@ from data_loader import discover_datasets, load_competition_file
 
 def run_all_benchmarks(csv_path: Optional[str] = None):
     print("\n" + "="*80)
-    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py (v2.0)")
+    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py")
     print("="*80)
 
     # Automatically discover CSV if not explicitly passed
@@ -102,7 +102,7 @@ def run_all_benchmarks(csv_path: Optional[str] = None):
 
     # Grand Scorecard Table
     print("\n" + "="*105)
-    print(" EXECUTIVE BENCHMARK SCORECARD: duopoly.py (v2.0) PERFORMANCE ACROSS ALL SCENARIOS")
+    print(" EXECUTIVE BENCHMARK SCORECARD: duopoly.py PERFORMANCE ACROSS ALL SCENARIOS")
     print(" (Official DPC Tournament Metric: Total Cumulative Revenue across all 100 Seasons)")
     print("="*105)
     summary_df = pd.DataFrame(results)[[

@@ -94,6 +94,8 @@ Selling Season 1  ... Selling Season 100  Selling Season 1 ... Selling Season 10
 
 ### 2.1 Structural Hierarchy
 
+![DPC Competition Structure and Simulation Hierarchy](imgs/prof_slide_page5.png)
+
 1. **Competition Match:** Two competitors are randomly paired by the DPC matchmaking engine to compete against each other [1, 3].
 2. **Simulations ($N=2$):** A competition comprises $N=2$ independent simulations. Each simulation synthesizes a new, randomized underlying market demand model [3].
 3. **Selling Seasons ($1 \dots 100$):** Each simulation runs for 100 identical selling seasons (representing 100 recurring flight departures on the BER $\to$ JFK route). The demand model is **held constant across all 100 seasons** within a simulation, allowing cross-season learning [3].
@@ -103,15 +105,29 @@ Selling Season 1  ... Selling Season 100  Selling Season 1 ... Selling Season 10
 5. **Capacity Constraint:** Both competitors start every season with a fixed inventory of **80 seats** [1, 3]. Inventory cannot be replenished. Unsold seats at period 100 expire with zero value.
 6. **Winning Metric:** The overall winner is the player with the highest **cumulative total revenue** across all simulations [1, 3].
 
-### 2.2 Customer Demand & Duopoly Market Dynamics
+### 2.2 Customer Demand & Ground-Truth Mechanics (Course Model)
 
-* **Poisson Customer Arrivals:** In each period $t \in [1, 100]$, the number of potential customer arrivals follows a Poisson process with arrival intensity $\lambda(t)$ [3]:
-  $$\Pr(K = k) = \frac{\lambda(t)^k e^{-\lambda(t)}}{k!}$$
-  Arrival intensity $\lambda(t)$ **rises steeply toward flight departure**, peaking dramatically in periods $80 \dots 100$ (late business travelers) [3].
-* **Customer Utility Function:** Arriving buyers evaluate seat offers using a random utility model:
-  $$U_i(p) = w_i - p$$
-  Lower prices offer higher attractiveness. Market share is split between Player A and Player B based on both absolute price levels and relative price differentials [1, 3].
-* **Monopoly State Transition:** If one airline exhausts all 80 seats prior to period 100, that airline becomes sold out (`competitor_has_capacity == False`) [1, 3]. The surviving airline captures 100% of the remaining market arrivals as an unconstrained **monopoly seller** [3].
+According to the official DPC specification (*Prof. Dr. Thomas Winter & Dr. Alwin Haensel* [3]), the underlying customer demand engine is **randomly parameterized per simulation**:
+
+![Official DPC Demand Model Mechanics](imgs/prof_slide_page6.png)
+
+* **Poisson Customer Arrivals:**
+  * Demand per period is Poisson distributed (integer customers only): $\Pr(K = k) = \frac{\lambda(t)^k e^{-\lambda(t)}}{k!}$.
+  * **Rises Toward Departure:** Arrival rate $\lambda(t)$ is convex, rising toward departure (day 100). The steepness of this surge is randomly sampled per simulation [3].
+  * **Random Overall Market Demand Level:** Across simulations, the baseline market demand can be substantially **high or low** [3].
+* **Customer Valuation & Willingness to Pay (WTP):**
+  * Low prices attract all segments. The maximum reservation price each customer will pay varies up to **\$150** [3].
+  * Three distinct consumer valuation segments exist:
+    1. **Up to Low:** Reservation price capped around **\$0 – \$50** (budget-sensitive flyers).
+    2. **Up to Mid:** Reservation price capped around **\$0 – \$85** (leisure travelers).
+    3. **Up to High:** Reservation price extending up to **\$150** (inelastic corporate travelers).
+  * **Simulation Variation:** The proportion of these three customer segments varies across simulations. In simulations dominated by "Up to Low" travelers, any price above \$60 yields near-zero demand.
+* **Competitor Sensitivity Variation:**
+  * How strongly customers react to the price gap with the rival also varies randomly per simulation:
+    * **"Cares a lot":** Steep multinomial logit curve where even a \$1 undercutting gap captures the vast majority of arrivals.
+    * **"Barely cares":** Flat sensitivity curve where customers are less responsive to competitor price differentials [3].
+* **Monopoly State Transition:**
+  * When one competitor sells all 80 seats before period 100, the remaining airline operates as an unconstrained **monopoly seller** for the remainder of the season [1, 3].
 
 ![DPC Game Rules, Hierarchy and Demand Mechanics](imgs/dpc_game_rules_visualization.png)
 
