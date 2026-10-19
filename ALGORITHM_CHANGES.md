@@ -1,10 +1,10 @@
-# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` $\to$ `v2.0` $\to$ `v3.0` $\to$ `v4.1` $\to$ `v5.0`)
+# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0`)
 
 This document archives the complete iterative engineering progression of our autonomous pricing algorithm, [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py), across five generations:
 - **`v1.0` Baseline**: The initial heuristic holdout strategy that failed due to flawed market size assumptions (89.9% seat spoilage, \$0 revenue in 4 of 6 tournaments).
-- **`v2.0` Overhaul**: Continuous inventory pacing ($\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$), EMA anchoring, and realistic empirical ceilings (\$25–\$100).
-- **`v3.0` Multi-Tier Adaptive Engine**: Cross-season demand modeling, targeted deep dumper counter-strategy (\$58 duopoly $\to$ \$64 monopoly), 5-tier archetype profiling, and follower defense.
-- **`v4.1` Master Architecture**: Deep dumper fallback circuit breaker (curing the \$0 trap), high-pricer ceiling guard (\$54 cap curing 40% seat spoilage), and empirical monopoly realignment (\$84/\$78/\$72/\$62).
+- **`v2.0` Overhaul**: Continuous inventory pacing $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$, EMA anchoring, and realistic empirical ceilings (\$25–\$100).
+- **`v3.0` Multi-Tier Adaptive Engine**: Cross-season demand modeling, targeted deep dumper counter-strategy (\$58 duopoly → \$64 monopoly), 5-tier archetype profiling, and follower defense.
+- **`v4` Master Architecture**: Deep dumper fallback circuit breaker (curing the \$0 trap), high-pricer ceiling guard (\$54 cap curing 40% seat spoilage), and empirical monopoly realignment (\$84/\$78/\$72/\$62).
 - **`v5.0` Master Architecture**: Universal low-sales circuit breaker (curing the \$27 dumper deadlock in `3d8tDh`), continuous dynamic anchor smoothing (\$35–\$44), monopoly yield curve calibration (\$52–\$56 sweet spot), unconditional late clearance at $t \ge 90$, and server 999.0 data hygiene.
 
 ---
@@ -167,7 +167,7 @@ def p(
 Despite sweeping mid-market opponents, `v2.0` revealed a critical flaw against flat \$18 dumpers:
 - **The Economic Trap in `3DRpAU` (FuturisticSalamander at \$18.40)**:
   - When rival priced at \$18.40, `v2.0` tried to undercut down to **\$28.00–\$35.00**.
-  - At \$28 vs \$18 ($\Delta p \approx \$10$), the rival remained much cheaper and captured 80 seats ($80 \text{ seats} \times \$18.40 = \$1,472$).
+  - At \$28 vs \$18 ($\Delta p \approx 10$), the rival remained much cheaper and captured 80 seats ($80 \text{ seats} \times 18.40 = \$1,472$).
   - The few seats we captured were sold at low ticket prices (\$28), earning only ~\$980/season.
   - Pricing between \$25 and \$38 against an \$18 dumper represents **"Death Valley"**: you lose the volume battle while sacrificing ticket margin.
 
@@ -224,9 +224,9 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 
 ---
 
-## 8. The `v4.1` Master Architecture
+## 8. The `v4` Master Architecture
 
-[`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v4.1) resolves every root cause from `data/v3`:
+[`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v4) resolves every root cause from `data/v3`:
 
 ```mermaid
 flowchart TD
@@ -245,7 +245,7 @@ flowchart TD
     RivalType -- "Balanced / Follower" --> PacingEngine["Continuous Dynamic Pacing<br/>Gap > 2: Undercut -$1.50 to -$8.00<br/>Gap ≤ -3: Scarcity Premium +$1 to +$14<br/>On Pace: Precision Match / Probe"]
 ```
 
-### Core Pillars of `v4.1`:
+### Core Pillars of `v4`:
 1. **Automated Deep Dumper Circuit Breaker:**
    - Holds \$58 in Season 1. If Season 1 yields $< 15$ seats sold, it lowers monopoly clearing to \$54 in Season 2. If failure persists, it contests duopoly share (\$32–\$36), **guaranteeing we never score \$0.00**.
 2. **High-Pricer Duopoly Ceiling Guard (\$54.00):**
@@ -263,10 +263,10 @@ According to the official DPC specification (*Prof. Dr. Thomas Winter & Dr. Alwi
 
 Analyzing all 30,143 realized purchase transactions across 130,000 empirical competition periods (`data/v1` and `data/v3`):
 
-| WTP Segment (Course Ground-Truth) | Price Range | % of All Sales | Median Sold Price | Expected Rev / Period | Strategic Role in `v4.1` |
+| WTP Segment (Course Ground-Truth) | Price Range | % of All Sales | Median Sold Price | Expected Rev / Period | Strategic Role in `v4` |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **Budget ("Up to Low")** | **\$25 – \$55** | **85.0%** | **\$38.70** | **\$32.33 – \$46.51** | Drives 85% of volume. Pacing sweet spot is **\$48–\$54**. Captured via circuit breaker if holdout fails. |
-| **Leisure ("Up to Mid")** | **\$55 – \$80** | **12.0%** | **\$62.50** | **\$12.18 – \$36.90** | Captured mid-season and early monopoly (**\$78 $\rightarrow$ \$72**). Capped at \$54 if rival is high. |
+| **Leisure ("Up to Mid")** | **\$55 – \$80** | **12.0%** | **\$62.50** | **\$12.18 – \$36.90** | Captured mid-season and early monopoly (**\$78 → \$72**). Capped at \$54 if rival is high. |
 | **Business ("Up to High")** | **\$80 – \$105+** | **3.0%** | **\$85.00** | **\$0.19 – \$3.36** | Inelastic demand. Only skimmed at the onset of monopoly when inventory burn-rate is very low. |
 
 ![DPC Strategy Visualization](imgs/dpc_strategy_visualization.png)
@@ -279,9 +279,9 @@ Evaluated across all 17 competition matches using the official DPC metric (Cumul
 
 ```
 =============================================================================================================================
- MULTI-GENERATION BENCHMARK COMPARISON: v3.0 vs v4.1 ACROSS ALL 17 SCENARIOS
+ MULTI-GENERATION BENCHMARK COMPARISON: v3.0 vs v4 ACROSS ALL 17 SCENARIOS
 =============================================================================================================================
-        Group                    Competitor  v3.0 (Baseline)  v4.1 (Option A)  Revenue Gain ($) Gain (%)  v3 Win  v4.1 Win
+        Group                    Competitor  v3.0 (Baseline)  v4 (Option A)    Revenue Gain ($) Gain (%)  v3 Win  v4 Win
     Synthetic                       Copycat      $152,336         $152,330             -$6      -0.00%    WIN       WIN
     Synthetic              AggressiveDumper      $174,233         $174,233             +$0      +0.00%    WIN       WIN
     Synthetic               Bounded (40-70)      $298,784         $298,952           +$168      +0.06%    WIN       WIN
@@ -304,13 +304,13 @@ V1 Historical    UncoveredElephant (HhTiQz)      $296,759         $358,063      
 =============================================================================================================================
 ```
 
-`duopoly.py` (v4.1) achieves a decisive **+\$152,905.53 net gain** over `v3.0`, eliminates all catastrophic real-world failure modes, and maintains a **100% victory sweep (17/17)** across all historical and synthetic competitors.
+`duopoly.py` (v4) achieves a decisive **+\$152,905.53 net gain** over `v3.0`, eliminates all catastrophic real-world failure modes, and maintains a **100% victory sweep (17/17)** across all historical and synthetic competitors.
 
 ---
 
-## 11. Empirical Post-Mortem of `v4.1` in Tournament Round 4 (`data/v4`)
+## 11. Empirical Post-Mortem of `v4` in Tournament Round 4 (`data/v4`)
 
-In Tournament Round 4 (60,000 periods across 6 tournaments), `v4.1` propelled us up to **Rank 11**, generating **\$1,680,305.00 in cumulative revenue** and selling 42,182 seats (87.9% load factor).
+In Tournament Round 4 (60,000 periods across 6 tournaments), `v4` propelled us up to **Rank 11**, generating **\$1,680,305.00 in cumulative revenue** and selling 42,182 seats (87.9% load factor).
 
 | Tournament ID | Opponent | Total Revenue | Seats Sold | Load Factor | Seats Spoiled | Avg Sold Price | Rival Avg Price | Rival Sold-Out Periods |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -324,15 +324,15 @@ In Tournament Round 4 (60,000 periods across 6 tournaments), `v4.1` propelled us
 
 *\*Note: Rival average in `PBMNQe` includes server 999.0 markers during sold-out periods.*
 
-![v4.1 Tournament Round 4 Post-Mortem](imgs/v4_round4_postmortem.png)
+![v4 Tournament Round 4 Post-Mortem](imgs/v4_round4_postmortem.png)
 
 * **Panel 1 (Round 4 Performance):** Cumulative tournament revenue and load factor across all 6 matches, showing stellar ~95%–100% load factors in 5 matches, dragged down solely by the `3d8tDh` outlier.
-* **Panel 2 (The 3d8tDh Dumper Deadlock):** Real-time trajectory against `SageSloth` (~ \$25.80): `v4.1` snapped anchor to \$35 and undercut down to the \$27.00 floor. Because `SageSloth` never reached 80 sales, our algorithm remained frozen at \$27.00 for all 100 seasons, spoiling 4,342 seats.
+* **Panel 2 (The 3d8tDh Dumper Deadlock):** Real-time trajectory against `SageSloth` (~ \$25.80): `v4` snapped anchor to \$35 and undercut down to the \$27.00 floor. Because `SageSloth` never reached 80 sales, our algorithm remained frozen at \$27.00 for all 100 seasons, spoiling 4,342 seats.
 * **Panel 3 (Spoilage Attribution):** Pie chart illustrating that `3d8tDh` alone accounted for **74.6% of all spoiled inventory** (4,342 out of 5,818 seats) in the entire round.
 
 ### Key Diagnostic Findings from `data/v4`:
-1. **The \$27.00 Dumper Deadlock (`3d8tDh` $\to$ -\$195k Loss)**:
-   - `SageSloth` priced at median \$25.80 (\$22–\$26). Because \$25.80 > \$20.00, `v4.1` classified them as `"dumper"` rather than `"deep_dumper"`.
+1. **The \$27.00 Dumper Deadlock (`3d8tDh` → -\$195k Loss)**:
+   - `SageSloth` priced at median \$25.80 (\$22–\$26). Because \$25.80 > \$20.00, `v4` classified them as `"dumper"` rather than `"deep_dumper"`.
    - The deep dumper circuit breaker was bypassed. In duopoly, line 220 snapped anchor to \$35.00 once `inventory_gap > 4.0`, capping target price at \$35.00 - \$8.00 = **\$27.00**.
    - `SageSloth` (\$22–\$26) captured all arrivals. Since arrivals were ~110, `SageSloth` never reached 80 sales and never sold out (0 periods).
    - Our algorithm remained frozen at \$27.00 for all 100 seasons, spoiling **4,342 seats** (74.6% of all round 4 spoilage).
@@ -367,15 +367,15 @@ flowchart TD
 
 ### Core Upgrades in `v5.0`:
 1. **Universal Low-Sales Circuit Breaker:**
-   - If holdout or pacing produces 2 consecutive seasons with $< 42$ sales, the algorithm breaks the deadlock by actively contesting volume at $\min(\text{hist\_med} - 0.5, \text{rival\_ema} - 0.5)$, guaranteeing that deadlocks like `3d8tDh` can never persist.
+   - If holdout or pacing produces 2 consecutive seasons with $< 42$ sales, the algorithm breaks the deadlock by actively contesting volume at `p = min(hist_med, rival_ema) - 0.5`, guaranteeing that deadlocks like `3d8tDh` can never persist.
 2. **Continuous Dynamic Anchor Smoothing:**
-   - Replaces the discontinuous cliff at `inventory_gap > 4.0` (\$44 $\to$ \$35) with a smooth linear curve:
-     $$\text{anchor\_price} = \text{np.clip}(44.0 - 0.8 \cdot \max(0.0, \text{inventory\_gap} - 1.5), 35.0, 44.0)$$
+   - Replaces the discontinuous cliff at `inventory_gap > 4.0` (\$44 → \$35) with a smooth linear curve:
+     $$\text{AnchorPrice} = \operatorname{clip}\left(44.0 - 0.8 \cdot \max(0.0, \text{InventoryGap} - 1.5),\, 35.0,\, 44.0\right)$$
    - Prevents reactive competitors from cascading into destructive undercutting spirals.
 3. **Monopoly Yield Curve Calibration (\$52–\$56 Sweet Spot):**
    - When remaining capacity requires a burn rate $> 1.25$, smoothly transitions price into the empirical high-yield budget sweet spot (\$52–\$56), which yields \$70.28/period and converts 1.45 seats/period, preventing late-season seat spoilage.
 4. **Unconditional Late Clearance at $t \ge 90$:**
-   - At $t \ge 90$, if $\text{remaining\_capacity} \ge 2$, applies clearance discounting regardless of gap to eliminate 100% of seat spoilage before departure.
+   - At $t \ge 90$, if remaining capacity $\ge 2$ seats (`remaining_capacity >= 2`), applies clearance discounting regardless of gap to eliminate 100% of seat spoilage before departure.
 5. **Data Hygiene Filter:**
    - Strictly ignores server 999.0 sold-out markers when computing competitor season medians.
 
