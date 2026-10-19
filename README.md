@@ -180,10 +180,10 @@ def p(
 | :--- | :---: | :--- |
 | `current_selling_season` | `int` | Current season index ($1 \dots 100$) [1, 3]. |
 | `selling_period_in_current_season` | `int` | Current period index ($1 \dots 100$, up to 101) [1, 3]. |
-| `prices_historical_in_current_season` | `ndarray \| None` | 2D array of shape `(n_competitors, past_periods)`. Rows = players, columns = periods. `None` in period 1 [1, 3]. |
-| `demand_historical_in_current_season` | `ndarray \| None` | 1D array of shape `(past_periods,)` — your own realized demand. `None` in period 1 [1, 3]. |
+| `prices_historical_in_current_season` | `ndarray` &#124; `None` | 2D array of shape `(n_competitors, past_periods)`. Rows = players, columns = periods. `None` in period 1 [1, 3]. |
+| `demand_historical_in_current_season` | `ndarray` &#124; `None` | 1D array of shape `(past_periods,)` — your own realized demand. `None` in period 1 [1, 3]. |
 | `competitor_has_capacity_...` | `bool` | `False` if the competitor is out of stock; `True` otherwise [1, 3]. |
-| `information_dump` | `Any \| None` | Custom in-memory state object returned to you next period. `None` in period 1 of season 1 [1, 3]. |
+| `information_dump` | `Any` &#124; `None` | Custom in-memory state object returned to you next period. `None` in period 1 of season 1 [1, 3]. |
 
 ### 3.3 State Persistence & Data Handshake Tiers
 
@@ -246,7 +246,7 @@ After every competition run, a comprehensive CSV report is generated containing 
 ## 4. Our Strategic Pricing Architecture (`duopoly.py` — v5.0)
 
 > [!IMPORTANT]
-> For a complete empirical post-mortem of our `v1.0`, `v2.0`, `v3.0`, and `v4.1` tournament results (including root-cause diagnosis of the `35zapi` $0 blowout, `3kGhWc` 40% seat spoilage, and the `3d8tDh` dumper deadlock from Round 4), see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
+> For a complete empirical post-mortem of our `v1.0`, `v2.0`, `v3.0`, `v4.1`, and `v5.0` tournament results (including root-cause diagnosis of the `35zapi` \$0 blowout, `3kGhWc` 40% seat spoilage, and the `3d8tDh` dumper deadlock from Round 4), see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
 
 Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v5.0) implements a **Multi-Tier Archetype Profiling, Continuous Pacing & Empirical WTP-Targeted Counter-Pricing Framework** designed around empirical findings from 190,000 real tournament periods.
 
@@ -254,21 +254,21 @@ Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%
 flowchart TD
     Start["New Period t (1..100)"] --> StockCheck{"Rival Has Stock?"}
     
-    StockCheck -- "NO (Monopoly)" --> MonopolyEngine["Monopoly Engine<br>BurnRate <= 0.35 -> $92.00<br>BurnRate <= 0.85 -> $78.00 - $84.00<br>BurnRate <= 1.25 -> $72.00<br>BurnRate > 1.25 -> $48.00 - $60.00 (Sweet Spot)"]
+    StockCheck -- "NO (Monopoly)" --> MonopolyEngine["Monopoly Engine<br/>BurnRate ≤ 0.35 → $92.00<br/>BurnRate ≤ 0.85 → $78.00 - $84.00<br/>BurnRate ≤ 1.25 → $72.00<br/>BurnRate > 1.25 → $48.00 - $60.00 (Sweet Spot)"]
     
-    StockCheck -- "YES (Duopoly)" --> CBCheck{"consecutive_low_sales >= 2?"}
+    StockCheck -- "YES (Duopoly)" --> CBCheck{"consecutive_low_sales ≥ 2?"}
     
-    CBCheck -- "YES (Universal Circuit Breaker)" --> ContestMarket["Contest Market Share<br>p = min(hist_med, ema) - $0.50<br>Guarantees Capacity Clearance"]
+    CBCheck -- "YES (Universal Circuit Breaker)" --> ContestMarket["Contest Market Share<br/>p = min(hist_med, ema) - $0.50<br/>Guarantees Capacity Clearance"]
     
     CBCheck -- "NO" --> ArchetypeCheck{"Rival Archetype"}
     
-    ArchetypeCheck -- "Deep Dumper (p <= $20)" --> DumperCircuit{"Failed Holdouts >= 2?"}
-    DumperCircuit -- "YES" --> ContestDumper["Contest Volume<br>Anchor $34-$38<br>Undercut to $28-$34"]
-    DumperCircuit -- "NO" --> HoldoutRule["Hold $58 Duopoly<br>Sweep $54-$64 Monopoly"]
+    ArchetypeCheck -- "Deep Dumper (p ≤ $20)" --> DumperCircuit{"Failed Holdouts ≥ 2?"}
+    DumperCircuit -- "YES" --> ContestDumper["Contest Volume<br/>Anchor $34-$38<br/>Undercut to $28-$34"]
+    DumperCircuit -- "NO" --> HoldoutRule["Hold $58 Duopoly<br/>Sweep $54-$64 Monopoly"]
     
-    ArchetypeCheck -- "High Pricer (p >= $62)" --> CeilingRule["High-Price Ceiling Guard<br>Cap duopoly price at $52-$54<br>Capture 100% Budget/Leisure"]
+    ArchetypeCheck -- "High Pricer (p ≥ $62)" --> CeilingRule["High-Price Ceiling Guard<br/>Cap duopoly price at $52-$54<br/>Capture 100% Budget/Leisure"]
     
-    ArchetypeCheck -- "Balanced / Follower" --> PacingRule["Continuous Inventory Pacing<br>Gap > 2: Undercut -$1.50 to -$8.00<br>Gap < -3: Scarcity Premium +$1 to +$14<br>Smooth Dynamic Anchor $35 - $44"]
+    ArchetypeCheck -- "Balanced / Follower" --> PacingRule["Continuous Inventory Pacing<br/>Gap > 2: Undercut -$1.50 to -$8.00<br/>Gap ≤ -3: Scarcity Premium +$1 to +$14<br/>Smooth Dynamic Anchor $35 - $44"]
 ```
 
 | Core Pillar | Operational Mechanism | Target Range / Formula | Economic & Empirical Objective |
@@ -278,7 +278,7 @@ flowchart TD
 | **3. Universal Low-Sales Circuit Breaker** | Cross-season failure alarm for chronic low sales ($< 42$ seats) | $p = \min(\text{hist\_med} - 0.5, \text{rival\_ema} - 0.5)$ | Cures the \$95k `3d8tDh` deadlock: if holdout yields low sales 2 seasons in a row, actively undercuts rival to guarantee clearance. |
 | **4. High-Pricer Ceiling Guard** | Cap duopoly asking price when rival prices high ($\ge \$62$) | Behind pace ($t \ge 15$): cap at **\$52.00–\$54.00** | Eliminate the 40% seat spoilage in `3kGhWc`: capture 100% of Budget/Leisure travelers and superior surplus on Business flyers. |
 | **5. Continuous Dynamic Anchor Smoothing** | Smooth linear transition replacing discontinuous cliff-edges | $\text{anchor} = \text{clip}(44.0 - 0.8 \cdot \max(0, \text{gap}-1.5), 35, 44)$ | Prevents triggering reactive copycats into downward undercutting price wars. |
-| **6. Realigned Empirical Monopoly Engine** | Context-aware pricing when `competitor_has_capacity == False` | Burn-rate governed: **\$92 / \$84 / \$78 / \$72 / \$48–\$60** | Smooth descent into budget conversion sweet spot ($52–$56) when burning inventory to eliminate 1,000+ spoiled seats. |
+| **6. Realigned Empirical Monopoly Engine** | Context-aware pricing when `competitor_has_capacity == False` | Burn-rate governed: **\$92 / \$84 / \$78 / \$72 / \$48–\$60** | Smooth descent into budget conversion sweet spot (\$52–\$56) when burning inventory to eliminate 1,000+ spoiled seats. |
 | **7. Unconditional Late Clearance** | Clearance discount runway starting at Period 75 and unconditional at $t \ge 90$ | `urgency = (t - 74) / 26`, bounded **\$25.00–\$100.00** | Liquidates all remaining seats before departure, ensuring zero seat spoilage at period 100. |
 
 ### 4.1 Continuous Inventory Pacing Curve (Periods 1–100)
@@ -292,7 +292,7 @@ flowchart TD
 
 ### 4.2 Multi-Tier Archetype Profiling & Counter-Pricing (Duopoly Mode)
 
-1. **The Deep Dumper Bypass & Circuit Breaker:** When facing a `'deep_dumper'`, our algorithm holds **\$58.00** during duopoly. Because the rival sells at \$18.40, budget customers purchase from them, capping the rival's season revenue at $80 \times \$18.40 = \$1,472$. If the rival sells out late and remaining arrivals do not convert (e.g. `35zapi`), the circuit breaker activates in subsequent seasons, lowering monopoly to \$54 and duopoly to \$32–\$36 to ensure steady sales.
+1. **The Deep Dumper Bypass & Circuit Breaker:** When facing a `'deep_dumper'`, our algorithm holds **\$58.00** during duopoly. Because the rival sells at \$18.40, budget customers purchase from them, capping the rival's season revenue at $80 \text{ seats} \times \$18.40 = \$1,472$. If the rival sells out late and remaining arrivals do not convert (e.g. `35zapi`), the circuit breaker activates in subsequent seasons, lowering monopoly to \$54 and duopoly to \$32–\$36 to ensure steady sales.
 2. **High-Pricer Ceiling Guard:** When facing high-priced rivals ($p \ge \$62$, e.g. `LoutishMacaque`), the algorithm refuses to quote in the dead zone above \$56. Capping at **\$52.00–\$54.00** captures all Budget and Leisure travelers, generating **\$380k+** revenue and 97%+ load factor.
 3. **Calibrated Anchor Guard:** For normal dumpers (\$20–\$38), our anchor floor drops to **\$35.00** when behind pace. When on pace or against copycats, our floor locks at **\$44.00**, preventing destructive downward price spirals.
 4. **Dynamic Undercutting & Scarcity Premium:** Against balanced rivals, when $\text{InventoryGap}(t) > 2.0$, undercut the anchor by $\min(8.0,\; 1.5 + 0.35 \times \text{InventoryGap})$. When ahead ($\text{InventoryGap}(t) < -3.0$), apply a scarcity markup of $+ \$1.00\text{–}\$14.00$.
