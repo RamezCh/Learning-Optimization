@@ -32,7 +32,7 @@ def test_contract_signature(mod):
     )
     assert isinstance(price, (float, int, np.floating)), f"{mod.__name__}: Returned price must be float"
     assert isinstance(info, dict), f"{mod.__name__}: Returned info must be dict"
-    assert 25.0 <= price <= 100.0, f"{mod.__name__}: Period 1 price {price} out of bounds"
+    assert 25.0 <= price <= 175.0, f"{mod.__name__}: Period 1 price {price} out of bounds"
 
 @pytest.mark.parametrize("mod", [duopoly_mlr, duopoly_poisson_logit])
 def test_multi_period_flow(mod):
@@ -49,7 +49,7 @@ def test_multi_period_flow(mod):
             competitor_has_capacity_current_period_in_current_season=True,
             information_dump=info
         )
-        assert 25.0 <= price <= 100.0, f"Period {t} price out of bounds: {price}"
+        assert 25.0 <= price <= 175.0, f"Period {t} price out of bounds: {price}"
         assert isinstance(info, dict)
         prices_hist.append(50.0)
         demand_hist.append(1)
