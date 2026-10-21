@@ -24,7 +24,6 @@ sys.path.append(ANALYTICS_DIR)
 
 import duopoly
 import duopoly_mlr
-import duopoly_poisson_logit
 
 from simulation_engine import (
     DuopolySimulator,
@@ -65,8 +64,7 @@ def run_3regime_benchmark():
 
     algorithms = {
         "Master (duopoly.py)": duopoly.p,
-        "MLR (duopoly_mlr.py)": duopoly_mlr.p,
-        "Poisson/Logit (duopoly_poisson_logit.py)": duopoly_poisson_logit.p,
+        "Rule-Based MLR (duopoly_mlr.py)": duopoly_mlr.p,
     }
 
     rivals = {

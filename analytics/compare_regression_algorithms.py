@@ -2,9 +2,8 @@
 compare_regression_algorithms.py
 --------------------------------
 Head-to-head simulation and benchmarking of:
-1. Master v5.0 (duopoly.py)
-2. Multiple Linear Regression Variant (duopoly_mlr.py)
-3. Poisson / Logistic Variant (duopoly_poisson_logit.py)
+1. Master v5.1 (duopoly.py)
+2. Rule-Based Multiple Linear Regression (duopoly_mlr.py)
 
 Evaluates on:
 - Copycat Competitor
@@ -29,7 +28,6 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 import duopoly
 import duopoly_mlr
-import duopoly_poisson_logit
 
 from simulation_engine import (
     DuopolySimulator,
@@ -42,13 +40,12 @@ from simulation_engine import (
 
 def run_head_to_head_comparison():
     print("="*80)
-    print(" HEAD-TO-HEAD BENCHMARK: MASTER v5.0 vs MLR vs POISSON/LOGISTIC")
+    print(" HEAD-TO-HEAD BENCHMARK: MASTER v5.1 vs RULE-BASED MLR")
     print("="*80)
 
     algorithms = {
-        "Master (v5.0)": duopoly.p,
-        "Multiple Linear Reg (MLR)": duopoly_mlr.p,
-        "Poisson/Logistic Reg": duopoly_poisson_logit.p
+        "Master (v5.1)": duopoly.p,
+        "Rule-Based MLR": duopoly_mlr.p
     }
 
     # Prepare rivals
@@ -92,17 +89,16 @@ def run_head_to_head_comparison():
     # Generate Visual Comparison Plot
     # -------------------------------------------------------------------------
     os.makedirs('imgs', exist_ok=True)
-    fig, axes = plt.subplots(1, 2, figsize=(18, 6.5), dpi=200)
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6.5), dpi=200)
     fig.patch.set_facecolor('#ffffff')
 
     sc_list = list(scenarios.keys())
     x = np.arange(len(sc_list))
-    width = 0.25
+    width = 0.35
 
     colors = {
-        "Master (v5.0)": '#0f766e',               # Teal
-        "Multiple Linear Reg (MLR)": '#2563eb',   # Blue
-        "Poisson/Logistic Reg": '#7c3aed'         # Purple
+        "Master (v5.1)": '#0f766e',               # Teal
+        "Rule-Based MLR": '#2563eb',              # Blue
     }
 
     # Subplot 1: Total Revenue ($k)
@@ -113,11 +109,11 @@ def run_head_to_head_comparison():
     for i, (algo_name, color) in enumerate(colors.items()):
         sub_df = df_res[df_res['Algorithm'] == algo_name]
         revs = [sub_df[sub_df['Scenario'] == sc]['Our Revenue ($k)'].values[0] for sc in sc_list]
-        bars = ax1.bar(x + (i - 1) * width, revs, width, label=algo_name, color=color, alpha=0.9)
+        bars = ax1.bar(x + (i - 0.5) * width, revs, width, label=algo_name, color=color, alpha=0.9)
         for b in bars:
             h = b.get_height()
             ax1.annotate(f'${h:.0f}k', xy=(b.get_x() + b.get_width()/2, h),
-                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=7.5, fontweight='bold')
+                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=8, fontweight='bold')
 
     ax1.set_title('100-Season Revenue Comparison ($k)', fontsize=13, fontweight='bold', pad=12)
     ax1.set_xticks(x)
@@ -133,13 +129,13 @@ def run_head_to_head_comparison():
     for i, (algo_name, color) in enumerate(colors.items()):
         sub_df = df_res[df_res['Algorithm'] == algo_name]
         win_rates = [sub_df[sub_df['Scenario'] == sc]['Win Rate (%)'].values[0] for sc in sc_list]
-        bars = ax2.bar(x + (i - 1) * width, win_rates, width, label=algo_name, color=color, alpha=0.9)
+        bars = ax2.bar(x + (i - 0.5) * width, win_rates, width, label=algo_name, color=color, alpha=0.9)
         for b in bars:
             h = b.get_height()
             ax2.annotate(f'{h:.0f}%', xy=(b.get_x() + b.get_width()/2, h),
-                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=7.5, fontweight='bold')
+                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=8, fontweight='bold')
 
-    ax2.set_title('Win Rate Against Rival (%)', fontsize=13, fontweight='bold', pad=12)
+    ax2.set_title('Tournament Win Rate (%)', fontsize=13, fontweight='bold', pad=12)
     ax2.set_xticks(x)
     ax2.set_xticklabels(sc_list, rotation=15, ha='right', fontsize=9)
     ax2.set_ylabel('Win Rate (%)', fontsize=10, fontweight='bold')
@@ -147,22 +143,22 @@ def run_head_to_head_comparison():
     ax2.legend(loc='upper right', frameon=True, fontsize=9)
 
     plt.tight_layout()
-    out_fig = 'imgs/algorithm_variant_comparison.png'
-    plt.savefig(out_fig, dpi=200)
+    chart_path = 'imgs/algorithm_variant_comparison.png'
+    plt.savefig(chart_path, bbox_inches='tight')
     plt.close()
-    print(f"\nSaved comparison chart to: {out_fig}")
+    print(f"\nSaved comparison chart to: {chart_path}")
 
-    # Summary table
+    # Summary
     print("\n" + "="*80)
     print(" AGGREGATE SUMMARY ACROSS ALL 5 SCENARIOS (500 SEASONS EACH)")
     print("="*80)
-    agg_table = df_res.groupby('Algorithm').agg(
+    agg = df_res.groupby('Algorithm').agg(
         Total_Revenue=('Our Revenue ($k)', 'sum'),
         Mean_Win_Rate=('Win Rate (%)', 'mean'),
         Mean_Load_Factor=('Our Load Factor (%)', 'mean')
-    ).reset_index()
-    print(agg_table.to_string(index=False))
+    ).reset_index().sort_values(by='Total_Revenue', ascending=False)
+    print(agg.to_string(index=False))
     print("="*80)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_head_to_head_comparison()

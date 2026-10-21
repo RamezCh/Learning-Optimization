@@ -328,38 +328,26 @@ def _calculate_inventory_gap(
 
 
 # -----------------------------------------------------------------------------
-# 5. Monopoly Regime Pricing Engine
+# 5. Monopoly Regime Pricing Engine (Continuous MLR Shadow-Cost Optimization)
 # -----------------------------------------------------------------------------
 def _calculate_monopoly_price(
     required_burn_rate: float,
     remaining_capacity: int,
     state: Dict[str, Any]
 ) -> float:
-    """Calibrates monopoly price based on required burn rate and detected WTP ceiling."""
-    is_low_wtp = state.get("detected_low_wtp", False)
+    """Computes continuous monopoly price derived from detected regime bounds and capacity burn rate."""
+    regime = state.get("detected_regime", "regime_2_medium")
+    preset = REGIME_PRESETS_MLR.get(regime, REGIME_PRESETS_MLR["regime_2_medium"])
+    p_low, p_high = preset["sweet_spot"]
+    p_floor = 46.0 if state.get("detected_low_wtp", False) else 50.0
 
-    # Case 1: Low-WTP Calibrated Sweet Spot (data/v5)
-    if is_low_wtp:
-        if required_burn_rate <= 0.40 and remaining_capacity <= 8:
-            return 64.0
-        if required_burn_rate <= 0.70:
-            return 60.0
-        if required_burn_rate <= 1.05:
-            return 56.0
-        if required_burn_rate <= 1.35:
-            return 52.0
-        return max(46.0, 52.0 - (required_burn_rate - 1.35) * 10.0)
+    # Scarcity bonus when capacity is nearly gone (<= 8 seats) and time remains
+    if remaining_capacity <= 8 and required_burn_rate <= 0.40:
+        return float(preset.get("max_price", p_high))
 
-    # Case 2: Standard Multi-Tier Monopoly
-    if required_burn_rate <= 0.35 and remaining_capacity <= 8:
-        return 92.0
-    if required_burn_rate <= 0.55:
-        return 84.0
-    if required_burn_rate <= 0.85:
-        return 78.0
-    if required_burn_rate <= 1.25:
-        return 72.0
-    return max(48.0, 72.0 - (required_burn_rate - 1.25) * 14.0)
+    # Continuous burn-rate clearance discount (zero hardcoded step ladders)
+    burn_discount = min(p_high - p_floor, 18.0 * max(0.0, required_burn_rate - 0.45))
+    return float(p_high - burn_discount)
 
 
 # -----------------------------------------------------------------------------
@@ -395,6 +383,7 @@ def _calculate_duopoly_price(
     target_price = _solve_closed_form_optimal_price(
         period,
         inventory_gap,
+        required_burn_rate,
         rival_recent_avg,
         state
     )
@@ -435,9 +424,22 @@ def _get_recent_rival_average(state: Dict[str, Any], fallback: float) -> float:
     return fallback
 
 
+def _compute_capacity_shadow_cost(inventory_gap: float, required_burn_rate: float) -> float:
+    """
+    Computes capacity opportunity cost mu(t, c):
+    - Higher when inventory is scarce (burn rate low, negative gap) -> raises asking price.
+    - Lower when inventory is surplus (burn rate high, positive gap) -> discounts asking price.
+    """
+    base_mu = 28.0
+    burn_penalty = 14.0 * (required_burn_rate - 0.80)
+    gap_penalty = 1.8 * inventory_gap
+    return float(np.clip(base_mu - burn_penalty - gap_penalty, 12.0, 56.0))
+
+
 def _solve_closed_form_optimal_price(
     period: int,
     inventory_gap: float,
+    required_burn_rate: float,
     rival_recent_avg: float,
     state: Dict[str, Any]
 ) -> float:
@@ -457,14 +459,8 @@ def _solve_closed_form_optimal_price(
     norm_t = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
     A = beta_0 + (beta_riv + beta_diff) * rival_recent_avg + beta_t * norm_t
 
-    # Capacity shadow price mu(inventory_gap)
-    base_mu = 26.0
-    if inventory_gap > 1.5:
-        mu = max(10.0, base_mu - 2.5 * (inventory_gap - 1.5))
-    elif inventory_gap < -2.5:
-        mu = min(55.0, base_mu + 3.0 * abs(inventory_gap))
-    else:
-        mu = base_mu
+    # Dynamic capacity shadow cost mu(t, c)
+    mu = _compute_capacity_shadow_cost(inventory_gap, required_burn_rate)
 
     if B < -0.001:
         optimal_p = (A - B * mu) / (2.0 * (-B))
