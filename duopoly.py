@@ -339,8 +339,10 @@ def _calculate_duopoly_price(
     target_price = _apply_pacing_differential(anchor_price, inventory_gap)
 
     # Guard 1: High-Price Ceiling Cap in Duopoly
-    if target_price > 54.0 and inventory_gap > 2.5 and period >= 15:
-        target_price = 52.0
+    is_low_wtp = state.get("detected_low_wtp", False)
+    duopoly_cap = 54.0 if is_low_wtp else 66.0
+    if target_price > duopoly_cap and inventory_gap > 2.5 and period >= 15:
+        target_price = duopoly_cap - 2.0
 
     # Guard 2: Mid-Season Micro-Probing
     if 15 <= period <= 65 and abs(inventory_gap) <= 3.5:
@@ -358,7 +360,8 @@ def _calculate_duopoly_price(
             rival_ema,
             inventory_gap,
             required_burn_rate,
-            remaining_capacity
+            remaining_capacity,
+            is_low_wtp
         )
 
     return target_price
@@ -408,15 +411,17 @@ def _apply_late_season_clearance(
     rival_ema: float,
     inventory_gap: float,
     required_burn_rate: float,
-    remaining_capacity: int
+    remaining_capacity: int,
+    is_low_wtp: bool = False
 ) -> float:
     r"""
     Handles late clearance ($t \ge 75$):
-    - Counters rivals that spike price late (e.g. ConvivialCrane) by holding $52–$54.
+    - Counters rivals that spike price late (e.g. ConvivialCrane) by holding $52–$54 under low WTP.
     - Accelerates liquidation when inventory is behind schedule to guarantee zero spoilage.
     """
+    late_cap = 54.0 if is_low_wtp else 78.0
     if rival_ema >= 54.0 and required_burn_rate <= 1.15:
-        return min(54.0, rival_ema - 2.0)
+        return min(late_cap, rival_ema - 2.0)
 
     if inventory_gap > 3.0 or (period >= 90 and remaining_capacity >= 2):
         urgency_factor = (period - 74) / 26.0
