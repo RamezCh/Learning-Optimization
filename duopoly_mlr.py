@@ -247,22 +247,22 @@ def _update_real_time_signals(
     if period <= 1 or prices_history is None:
         return
 
-    latest_rival = _extract_latest_rival_price(prices_history)
+    latest_rival_price = _extract_latest_rival_price(prices_history)
     my_prev_price = state.get("my_last_price", DEFAULT_RIVAL_PRICE)
     last_demand = _extract_last_demand(demand_history)
 
-    if latest_rival is not None:
-        state["rival_last_price"] = latest_rival
+    if latest_rival_price is not None:
+        state["rival_last_price"] = latest_rival_price
         recent_prices = state.setdefault("rival_recent_prices", [])
-        recent_prices.append(latest_rival)
+        recent_prices.append(latest_rival_price)
         if len(recent_prices) > 15:
             recent_prices.pop(0)
 
         # Log training observation [p_our, p_rival, p_diff, norm_t, demand]
-        price_diff = latest_rival - my_prev_price
+        price_diff = latest_rival_price - my_prev_price
         norm_t = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
         state.setdefault("training_history", []).append([
-            my_prev_price, latest_rival, price_diff, norm_t, last_demand
+            my_prev_price, latest_rival_price, price_diff, norm_t, last_demand
         ])
 
         # Track price-demand conversion by bucket
@@ -338,19 +338,19 @@ def _calculate_duopoly_price(
     state: Dict[str, Any]
 ) -> float:
     """Computes asking price during active duopoly using closed-form MLR revenue maximization."""
-    latest_rival = state.get("rival_last_price", DEFAULT_RIVAL_PRICE)
-    rival_recent_avg = _get_recent_rival_average(state, latest_rival)
+    latest_rival_price = state.get("rival_last_price", DEFAULT_RIVAL_PRICE)
+    rival_recent_avg = _get_recent_rival_average(state, latest_rival_price)
     consecutive_low_sales = state.get("consecutive_low_sales", 0)
 
     # Branch 1: Universal Low-Sales Circuit Breaker
     if consecutive_low_sales >= 2:
-        breaker_price = min(latest_rival - 0.5, rival_recent_avg - 0.5)
+        breaker_price = min(latest_rival_price - 0.5, rival_recent_avg - 0.5)
         if inventory_gap > 3.0:
             breaker_price -= min(4.0, 0.35 * inventory_gap)
         return breaker_price
 
     # Branch 2: Deep Dumper Holdout
-    if latest_rival <= 19.5 and rival_recent_avg <= 19.5:
+    if latest_rival_price <= 19.5 and rival_recent_avg <= 19.5:
         return 58.0
 
     # Branch 3: Closed-Form MLR Revenue Optimization

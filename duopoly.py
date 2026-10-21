@@ -181,13 +181,13 @@ def _update_real_time_signals(
         state["current_season_sellout_t"] = period
 
     # 2. Update rival price and EMA
-    latest_rival = _extract_latest_rival_price(prices_history)
-    if latest_rival is not None:
-        state["rival_last_price"] = latest_rival
-        if has_rival_capacity and latest_rival > 5.0:
+    latest_rival_price = _extract_latest_rival_price(prices_history)
+    if latest_rival_price is not None:
+        state["rival_last_price"] = latest_rival_price
+        if has_rival_capacity and latest_rival_price > 5.0:
             smoothing_factor = 0.25
             current_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
-            updated_ema = smoothing_factor * latest_rival + (1.0 - smoothing_factor) * current_ema
+            updated_ema = smoothing_factor * latest_rival_price + (1.0 - smoothing_factor) * current_ema
             state["rival_ema_price"] = float(updated_ema)
 
     # 3. Log realized demand against our previous price bucket ($5 granularity)
@@ -299,14 +299,14 @@ def _calculate_duopoly_price(
 ) -> float:
     """Computes asking price during active duopoly competition against stock-bearing rival."""
     rival_profile = state.get("rival_profile", "balanced")
-    latest_rival = state.get("rival_last_price")
+    latest_rival_price = state.get("rival_last_price")
     rival_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
     failed_holdouts = state.get("failed_holdout_seasons", 0)
     consecutive_low_sales = state.get("consecutive_low_sales", 0)
 
     is_deep_dumper = (
         rival_profile == "deep_dumper"
-        or (latest_rival is not None and latest_rival <= 19.5 and rival_ema <= 19.5)
+        or (latest_rival_price is not None and latest_rival_price <= 19.5 and rival_ema <= 19.5)
     )
 
     # Branch 1: Deep Dumper Defense (FuturisticSalamander / RussetBat)
