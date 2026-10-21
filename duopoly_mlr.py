@@ -185,12 +185,17 @@ def _handle_season_transition(
 def _classify_and_update_regime(state: Dict[str, Any]) -> None:
     """Classifies the market into one of 3 empirical regimes based on cumulative transaction stats."""
     stats_dict = state.get("price_demand_stats", {})
-    high_buckets = [b for b in stats_dict.keys() if b >= 75]
+    high_buckets = [b for b in stats_dict.keys() if b >= 70]
     high_periods = sum(stats_dict[b][1] for b in high_buckets)
     high_sales = sum(stats_dict[b][0] for b in high_buckets)
+    rival_medians = state.get("rival_season_medians", [])
 
-    # 1. Low-WTP Surge (Regime 3, e.g. data/v5): zero sales at >= $75 after 4+ tests
-    if high_periods >= 4 and high_sales == 0:
+    # 1. Low-WTP Surge (Regime 3, e.g. data/v5): zero sales at >= $70, or rival consistently <= $55
+    if (high_periods >= 4 and high_sales == 0) or (
+        len(rival_medians) >= 2
+        and np.median(rival_medians) <= 55.0
+        and high_sales == 0
+    ):
         state["detected_regime"] = "regime_3_low"
         state["detected_low_wtp"] = True
     # 2. High-WTP Premium (Regime 1, e.g. data/v1/v4): > 25% conversion at >= $75
@@ -424,16 +429,23 @@ def _get_recent_rival_average(state: Dict[str, Any], fallback: float) -> float:
     return fallback
 
 
-def _compute_capacity_shadow_cost(inventory_gap: float, required_burn_rate: float) -> float:
+def _compute_capacity_shadow_cost(
+    inventory_gap: float,
+    required_burn_rate: float,
+    is_low_wtp: bool = False
+) -> float:
     """
     Computes capacity opportunity cost mu(t, c):
     - Higher when inventory is scarce (burn rate low, negative gap) -> raises asking price.
-    - Lower when inventory is surplus (burn rate high, positive gap) -> discounts asking price.
+    - Lower when inventory is surplus (burn rate high, positive gap) -> aggressively discounts
+      to guarantee liquidation before seats expire at $0 value.
+    - In low-WTP / high-volume surge regimes, lower floor to prevent leftover inventory.
     """
-    base_mu = 28.0
-    burn_penalty = 14.0 * (required_burn_rate - 0.80)
-    gap_penalty = 1.8 * inventory_gap
-    return float(np.clip(base_mu - burn_penalty - gap_penalty, 12.0, 56.0))
+    base_mu = 26.0
+    burn_penalty = 16.0 * (required_burn_rate - 0.80)
+    gap_penalty = 2.4 * inventory_gap
+    min_mu = 2.0 if is_low_wtp else 10.0
+    return float(np.clip(base_mu - burn_penalty - gap_penalty, min_mu, 56.0))
 
 
 def _solve_closed_form_optimal_price(
@@ -460,15 +472,19 @@ def _solve_closed_form_optimal_price(
     A = beta_0 + (beta_riv + beta_diff) * rival_recent_avg + beta_t * norm_t
 
     # Dynamic capacity shadow cost mu(t, c)
-    mu = _compute_capacity_shadow_cost(inventory_gap, required_burn_rate)
+    is_low_wtp = state.get("detected_low_wtp", False)
+    mu = _compute_capacity_shadow_cost(inventory_gap, required_burn_rate, is_low_wtp)
 
     if B < -0.001:
         optimal_p = (A - B * mu) / (2.0 * (-B))
     else:
         optimal_p = rival_recent_avg - 1.0
 
-    # Restrict regression extrapolation
-    return float(np.clip(optimal_p, rival_recent_avg - 8.0, rival_recent_avg + 12.0))
+    # Margin-Preserving Extrapolation Guard:
+    # Scale allowed undercut smoothly based on inventory gap to avoid sacrificing ticket margin
+    max_cap = 8.50 if is_low_wtp else 7.50
+    max_undercut = min(max_cap, 1.20 + 0.35 * max(0.0, inventory_gap - 1.5))
+    return float(np.clip(optimal_p, rival_recent_avg - max_undercut, rival_recent_avg + 12.0))
 
 
 def _apply_late_season_clearance(
