@@ -37,6 +37,24 @@ PRIOR_GAMMA_0: float = 2.10      # Choice model intercept
 PRIOR_GAMMA_DIFF: float = 0.045  # Undercutting sensitivity
 PRIOR_GAMMA_OWN: float = 0.055   # Absolute price resistance
 
+REGIME_PRESETS_POISSON_LOGIT: Dict[str, Dict[str, Any]] = {
+    "regime_1_high": {
+        "alpha_0": -0.45, "alpha_1": 0.90,
+        "gamma_0": 0.087, "gamma_diff": 0.080, "gamma_own": 0.0035,
+        "sweet_spot": (74.0, 84.0), "max_price": 95.0
+    },
+    "regime_2_medium": {
+        "alpha_0": 0.15, "alpha_1": 1.10,
+        "gamma_0": 2.966, "gamma_diff": 0.090, "gamma_own": 0.077,
+        "sweet_spot": (64.0, 72.0), "max_price": 85.0
+    },
+    "regime_3_low": {
+        "alpha_0": 0.65, "alpha_1": 1.35,
+        "gamma_0": 5.475, "gamma_diff": 0.005, "gamma_own": 0.115,
+        "sweet_spot": (52.0, 62.0), "max_price": 68.0
+    }
+}
+
 
 # -----------------------------------------------------------------------------
 # Main Public Entrypoint (Competition Server Interface)
@@ -138,6 +156,7 @@ def _initialize_or_get_state(
         "rival_last_price": DEFAULT_NEUTRAL_PRICE,
         "price_demand_stats": {},
         "detected_low_wtp": False,
+        "detected_regime": "regime_2_medium",
         "alpha_0": PRIOR_ALPHA_0,
         "alpha_1": PRIOR_ALPHA_1,
         "gamma_0": PRIOR_GAMMA_0,
@@ -154,27 +173,45 @@ def _handle_season_transition(
     demand_history: Union[np.ndarray, List[int], None],
     state: Dict[str, Any]
 ) -> None:
-    """Updates low sales streak, evaluates WTP ceiling, and adapts baseline arrival rate."""
+    """Updates low sales streak, classifies macroeconomic regime, and adapts baseline arrival rate."""
     prev_season_sales = _calculate_units_sold(demand_history)
     state["consecutive_low_sales"] = (
         state.get("consecutive_low_sales", 0) + 1 if prev_season_sales < 42 else 0
     )
 
-    _evaluate_wtp_ceiling(state)
+    _classify_and_update_regime(state)
     _adapt_arrival_intensity(state)
 
     state["last_season_seen"] = new_season
     state["rival_recent_prices"] = []
 
 
-def _evaluate_wtp_ceiling(state: Dict[str, Any]) -> None:
-    """Checks whether high-priced tickets (>= $70) fail to convert in this tournament."""
+def _classify_and_update_regime(state: Dict[str, Any]) -> None:
+    """Classifies the market into one of 3 empirical regimes based on cumulative transaction stats."""
     stats_dict = state.get("price_demand_stats", {})
-    high_buckets = [b for b in stats_dict.keys() if b >= 70]
+    high_buckets = [b for b in stats_dict.keys() if b >= 75]
     high_periods = sum(stats_dict[b][1] for b in high_buckets)
     high_sales = sum(stats_dict[b][0] for b in high_buckets)
-    if high_periods >= 5 and high_sales == 0:
+
+    # 1. Low-WTP Surge (Regime 3, e.g. data/v5): zero sales at >= $75 after 4+ tests
+    if high_periods >= 4 and high_sales == 0:
+        state["detected_regime"] = "regime_3_low"
         state["detected_low_wtp"] = True
+    # 2. High-WTP Premium (Regime 1, e.g. data/v1/v4): > 25% conversion at >= $75
+    elif high_periods >= 4 and (high_sales / float(high_periods)) >= 0.25:
+        state["detected_regime"] = "regime_1_high"
+        state["detected_low_wtp"] = False
+    else:
+        state["detected_regime"] = "regime_2_medium"
+        state["detected_low_wtp"] = False
+
+    preset = REGIME_PRESETS_POISSON_LOGIT[state["detected_regime"]]
+    # Apply calibrated regime priors
+    state["alpha_0"] = preset["alpha_0"]
+    state["alpha_1"] = preset["alpha_1"]
+    state["gamma_0"] = preset["gamma_0"]
+    state["gamma_diff"] = preset["gamma_diff"]
+    state["gamma_own"] = preset["gamma_own"]
 
 
 def _adapt_arrival_intensity(state: Dict[str, Any]) -> None:
@@ -336,7 +373,10 @@ def _calculate_duopoly_price(
 
     # Branch 2: Deep Dumper Holdout
     if latest_rival_price <= 19.5 and rival_recent_avg <= 19.5:
-        return 58.0
+        min_periods_needed = int(np.ceil(remaining_capacity / 1.85))
+        safe_holdout_deadline = max(55, (TOTAL_SELLING_PERIODS + 1) - min_periods_needed)
+        if period < safe_holdout_deadline:
+            return 58.0
 
     # Branch 3: Poisson-Logistic Expected Surplus Optimization
     target_price = _solve_surplus_maximizing_price(

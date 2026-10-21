@@ -34,6 +34,21 @@ DEFAULT_RIVAL_PRICE: float = 50.0
 MIN_OBSERVATIONS_FOR_TRAINING: int = 80
 TRAINING_WINDOW_SIZE: int = 2500
 
+REGIME_PRESETS_MLR: Dict[str, Dict[str, Any]] = {
+    "regime_1_high": {
+        "intercept": 0.605, "b_p": -0.0146, "b_riv": 0.0138, "b_diff": 0.0284, "b_t": 0.439,
+        "sweet_spot": (74.0, 84.0), "max_price": 95.0
+    },
+    "regime_2_medium": {
+        "intercept": 1.245, "b_p": -0.0171, "b_riv": -0.0022, "b_diff": 0.0149, "b_t": 0.714,
+        "sweet_spot": (64.0, 72.0), "max_price": 85.0
+    },
+    "regime_3_low": {
+        "intercept": 2.233, "b_p": -0.0258, "b_riv": -0.0131, "b_diff": 0.0128, "b_t": 0.833,
+        "sweet_spot": (52.0, 62.0), "max_price": 68.0
+    }
+}
+
 
 # -----------------------------------------------------------------------------
 # Main Public Entrypoint (Competition Server Interface)
@@ -141,7 +156,8 @@ def _initialize_or_get_state(
         "my_last_price": DEFAULT_NEUTRAL_PRICE,
         "rival_last_price": DEFAULT_NEUTRAL_PRICE,
         "price_demand_stats": {},
-        "detected_low_wtp": False
+        "detected_low_wtp": False,
+        "detected_regime": "regime_2_medium"
     }
 
 
@@ -153,27 +169,46 @@ def _handle_season_transition(
     demand_history: Union[np.ndarray, List[int], None],
     state: Dict[str, Any]
 ) -> None:
-    """Updates circuit breaker streak, checks WTP ceiling, and refits the MLR model."""
+    """Updates circuit breaker streak, classifies macroeconomic regime, and refits the MLR model."""
     prev_season_sales = _calculate_units_sold(demand_history)
     state["consecutive_low_sales"] = (
         state.get("consecutive_low_sales", 0) + 1 if prev_season_sales < 42 else 0
     )
 
-    _evaluate_wtp_ceiling(state)
+    _classify_and_update_regime(state)
     _fit_online_regression(state)
 
     state["last_season_seen"] = new_season
     state["rival_recent_prices"] = []
 
 
-def _evaluate_wtp_ceiling(state: Dict[str, Any]) -> None:
-    """Checks whether high-priced tickets (>= $70) fail to convert in this tournament."""
+def _classify_and_update_regime(state: Dict[str, Any]) -> None:
+    """Classifies the market into one of 3 empirical regimes based on cumulative transaction stats."""
     stats_dict = state.get("price_demand_stats", {})
-    high_buckets = [b for b in stats_dict.keys() if b >= 70]
+    high_buckets = [b for b in stats_dict.keys() if b >= 75]
     high_periods = sum(stats_dict[b][1] for b in high_buckets)
     high_sales = sum(stats_dict[b][0] for b in high_buckets)
-    if high_periods >= 5 and high_sales == 0:
+
+    # 1. Low-WTP Surge (Regime 3, e.g. data/v5): zero sales at >= $75 after 4+ tests
+    if high_periods >= 4 and high_sales == 0:
+        state["detected_regime"] = "regime_3_low"
         state["detected_low_wtp"] = True
+    # 2. High-WTP Premium (Regime 1, e.g. data/v1/v4): > 25% conversion at >= $75
+    elif high_periods >= 4 and (high_sales / float(high_periods)) >= 0.25:
+        state["detected_regime"] = "regime_1_high"
+        state["detected_low_wtp"] = False
+    else:
+        state["detected_regime"] = "regime_2_medium"
+        state["detected_low_wtp"] = False
+
+    preset = REGIME_PRESETS_MLR[state["detected_regime"]]
+    # Apply prior weights if not enough online observations to fit
+    if len(state.get("training_history", [])) < MIN_OBSERVATIONS_FOR_TRAINING:
+        state["mlr_intercept"] = preset["intercept"]
+        state["mlr_b_p"] = preset["b_p"]
+        state["mlr_b_riv"] = preset["b_riv"]
+        state["mlr_b_diff"] = preset["b_diff"]
+        state["mlr_b_t"] = preset["b_t"]
 
 
 def _fit_online_regression(state: Dict[str, Any]) -> None:
@@ -351,7 +386,10 @@ def _calculate_duopoly_price(
 
     # Branch 2: Deep Dumper Holdout
     if latest_rival_price <= 19.5 and rival_recent_avg <= 19.5:
-        return 58.0
+        min_periods_needed = int(np.ceil(remaining_capacity / 1.85))
+        safe_holdout_deadline = max(55, (TOTAL_SELLING_PERIODS + 1) - min_periods_needed)
+        if period < safe_holdout_deadline:
+            return 58.0
 
     # Branch 3: Closed-Form MLR Revenue Optimization
     target_price = _solve_closed_form_optimal_price(

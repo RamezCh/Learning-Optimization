@@ -311,7 +311,13 @@ def _calculate_duopoly_price(
 
     # Branch 1: Deep Dumper Defense (FuturisticSalamander / RussetBat)
     if is_deep_dumper:
-        if failed_holdouts >= 2:
+        # Intra-Season Safe Holdout Horizon:
+        # At maximum monopoly absorption (~1.85 seats/period), liquidating remaining_capacity
+        # requires ceil(remaining_capacity / 1.85) periods. If remaining periods is less,
+        # waiting any longer guarantees terminal seat spoilage if rival fails to sell out.
+        min_periods_needed = int(np.ceil(remaining_capacity / 1.85))
+        safe_holdout_deadline = max(55, (TOTAL_SELLING_PERIODS + 1) - min_periods_needed)
+        if failed_holdouts >= 2 or period >= safe_holdout_deadline:
             anchor = 34.0 if inventory_gap > 3.0 else 38.0
             return anchor - min(6.0, 1.0 + 0.3 * max(0.0, inventory_gap))
         return 58.0
