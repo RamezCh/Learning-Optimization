@@ -1,273 +1,499 @@
-import numpy as np
-from typing import Union, Tuple, Optional, Any, Dict
+"""
+duopoly.py
+----------
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v5.1).
 
+Architectural Overview:
+1. Target Depletion Curve (Continuous Inventory Pacing):
+   Maintains sales progress along TargetSold(t) = 80 * (0.85*tau + 0.15*tau^2).
+2. Multi-Tier Competitor Archetype Profiling:
+   Identifies rivals as deep dumper, dumper, aggressive, balanced, or high pricer.
+3. Adaptive WTP-Calibrated Monopoly Engine:
+   Dynamically identifies low-WTP environments and clears seats at the empirical $52–$64 sweet spot.
+4. Robust Duopoly Pacing & Circuit Breakers:
+   Smooth-scaled undercutting for balanced rivals and fallback triggers for persistent low-price deadlocks.
+"""
+
+from typing import Any, Dict, List, Optional, Tuple, Union
+import numpy as np
+
+# -----------------------------------------------------------------------------
+# Domain Constants
+# -----------------------------------------------------------------------------
+MIN_PRICE: float = 25.0
+MAX_PRICE: float = 100.0
+DEFAULT_TOTAL_CAPACITY: int = 80
+TOTAL_SELLING_PERIODS: int = 100
+SERVER_SOLDOUT_PRICE_THRESHOLD: float = 200.0
+TERMINAL_SOLDOUT_PRICE: float = 95.0
+DEFAULT_NEUTRAL_PRICE: float = 65.0
+
+
+# -----------------------------------------------------------------------------
+# Main Public Entrypoint (Competition Server Interface)
+# -----------------------------------------------------------------------------
 def p(
     current_selling_season: int,
     selling_period_in_current_season: int,
-    prices_historical_in_current_season: Union[np.ndarray, None],
-    demand_historical_in_current_season: Union[np.ndarray, None],
+    prices_historical_in_current_season: Union[np.ndarray, List[float], None],
+    demand_historical_in_current_season: Union[np.ndarray, List[int], None],
     competitor_has_capacity_current_period_in_current_season: bool,
     information_dump: Optional[Any] = None
-) -> Tuple[float, Any]:
+) -> Tuple[float, Dict[str, Any]]:
     """
-    Dynamic Pricing Algorithm v5.0 for Airline Duopoly Competition.
-    
-    Key Strategic Pillars:
-    1. Multi-Tier Rival Archetype Profiling & Counter-Pricing:
-       - 'deep_dumper' (<= $20.00, e.g. FuturisticSalamander at $18.40)
-       - 'dumper' ($20.00 - $38.00, e.g. SageSloth at $25.80, FierceDuck at $34.50)
-       - 'aggressive' ($38.00 - $58.00, e.g. PinkDuck, ZealousMosquito)
-       - 'balanced' ($58.00 - $78.00, e.g. Winner_2023, ScrupulousZebu)
-       - 'high' (> $78.00, e.g. LoutishMacaque, Old v1.0 Baseline)
-    2. Deep Dumper Defense with Automated Circuit Breaker:
-       - Holds $58.00 in duopoly to avoid "Death Valley", forcing the rival to cap out at $1,472/season.
-       - If Season 1 yields < 15 sales (e.g. low-demand dumper markets like 35zapi), the circuit
-         breaker lowers monopoly clearing to $54.00, and if failure persists, contests duopoly share
-         ($32-$36) to prevent zero-revenue blowouts.
-    3. Universal Low-Sales Circuit Breaker (Cures the 3d8tDh Deadlock):
-       - If holdout or pacing produces consecutive low-sales seasons (< 42 seats sold), breaks out
-         of artificial anchors and contests market volume at rival_med - $0.50 to clear capacity.
-    4. Continuous Dynamic Anchor Smoothing:
-       - Replaces discontinuous step-jumps with a smooth linear decay against inventory gap,
-         preventing reactive rivals from cascading downward into price wars.
-    5. Calibrated Empirical Monopoly Engine:
-       - Anchors peak monopoly yield at $78-$84, with high-conversion clearance ($52-$56) when
-         inventory burn-rate is elevated, eliminating seat spoilage.
-    6. Unconditional Late-Season Anti-Spoilage Clearance:
-       - At t >= 90 with remaining capacity >= 2, applies clearance discounting regardless of gap
-         to ensure zero seat spoilage at period 100.
-    7. Clean Data Hygiene:
-       - Filters out server 999.0 sold-out markers when computing rival historical medians.
+    Main dynamic pricing decision function called by the competition simulator each period.
+    Adheres strictly to Clean Code Single Responsibility and Step-down Rules.
     """
+    state = _initialize_or_get_state(information_dump)
+    period = selling_period_in_current_season
+
+    # 1. Terminal / End-of-Season Phase
+    if period > TOTAL_SELLING_PERIODS:
+        return _handle_end_of_season(
+            prices_historical_in_current_season,
+            demand_historical_in_current_season,
+            state
+        )
+
+    # 2. Inventory & Capacity Status
+    units_sold = _calculate_units_sold(demand_historical_in_current_season)
+    remaining_capacity = max(0, state["total_capacity"] - units_sold)
     
-    # -------------------------------------------------------------------------
-    # 1. Initialize & Update Persistent Memory (information_dump)
-    # -------------------------------------------------------------------------
-    if information_dump is None or not isinstance(information_dump, dict):
-        information_dump = {
-            "total_capacity": 80,
-            "rival_season_medians": [],
-            "rival_ema_price": 65.0,
-            "rival_profile": "balanced",
-            "season_sales_history": [],
-            "rival_sold_out_seasons": 0,
-            "rival_sellout_periods": [],
-            "my_last_price": 65.0,
-            "rival_last_price": 65.0,
-            "price_demand_stats": {},           # bucket -> [total_demand, count_periods]
-            "current_season_sellout_t": None,
-            "failed_holdout_seasons": 0,        # Count seasons where deep dumper holdout got < 15 sales
-            "consecutive_low_sales": 0          # Count seasons where sales were < 42
-        }
-    
-    TOTAL_CAPACITY = information_dump.get("total_capacity", 80)
-    t = selling_period_in_current_season
-    
-    # -------------------------------------------------------------------------
-    # 2. Calculate Current Inventory & Demand
-    # -------------------------------------------------------------------------
-    if demand_historical_in_current_season is not None and len(demand_historical_in_current_season) > 0:
-        units_sold_so_far = int(np.sum(demand_historical_in_current_season))
-        last_demand = float(demand_historical_in_current_season[-1])
-    else:
-        units_sold_so_far = 0
-        last_demand = 0.0
-        
-    remaining_capacity = max(0, TOTAL_CAPACITY - units_sold_so_far)
-    remaining_periods = max(1, 101 - t)
+    if remaining_capacity <= 0:
+        return TERMINAL_SOLDOUT_PRICE, state
+
+    remaining_periods = max(1, (TOTAL_SELLING_PERIODS + 1) - period)
     required_burn_rate = remaining_capacity / remaining_periods
 
-    # Track real-time moment competitor runs out of capacity
+    # 3. Process In-Season Environmental Signals
+    _update_real_time_signals(
+        period,
+        prices_historical_in_current_season,
+        demand_historical_in_current_season,
+        competitor_has_capacity_current_period_in_current_season,
+        state
+    )
+
+    # 4. Inventory Pacing Position
+    inventory_gap = _calculate_inventory_gap(
+        period,
+        remaining_capacity,
+        state["total_capacity"]
+    )
+
+    # 5. Pricing Engine (Monopoly vs Duopoly Regimes)
     if not competitor_has_capacity_current_period_in_current_season:
-        if information_dump.get("current_season_sellout_t") is None:
-            information_dump["current_season_sellout_t"] = t
-            
-    # -------------------------------------------------------------------------
-    # 3. Period 101: End-of-Season Inter-Season Analytics
-    # -------------------------------------------------------------------------
-    if t > 100:
-        if prices_historical_in_current_season is not None and prices_historical_in_current_season.shape[0] >= 2:
-            rival_season_prices = prices_historical_in_current_season[1, :]
-            # Exclude server sold-out placeholder values (999.0)
-            valid_rival_prices = rival_season_prices[rival_season_prices < 200.0]
-            if len(valid_rival_prices) > 0:
-                season_med = float(np.median(valid_rival_prices))
-                information_dump["rival_season_medians"].append(season_med)
-                overall_med = float(np.median(information_dump["rival_season_medians"]))
+        raw_price = _calculate_monopoly_price(
+            required_burn_rate,
+            remaining_capacity,
+            state
+        )
+    else:
+        raw_price = _calculate_duopoly_price(
+            period,
+            current_selling_season,
+            inventory_gap,
+            required_burn_rate,
+            remaining_capacity,
+            state
+        )
 
-                if overall_med <= 20.0:
-                    information_dump["rival_profile"] = "deep_dumper"
-                elif overall_med <= 38.0:
-                    information_dump["rival_profile"] = "dumper"
-                elif overall_med <= 58.0:
-                    information_dump["rival_profile"] = "aggressive"
-                elif overall_med <= 78.0:
-                    information_dump["rival_profile"] = "balanced"
-                else:
-                    information_dump["rival_profile"] = "high"
+    # 6. Safety Bounds & State Persistence
+    final_price = _clamp_price(raw_price)
+    _persist_decision(final_price, period, state)
 
-        information_dump["season_sales_history"].append(units_sold_so_far)
-        
-        # Track failed holdout against deep dumpers (e.g. 35zapi)
-        if information_dump.get("rival_profile") == "deep_dumper":
-            if units_sold_so_far < 15:
-                information_dump["failed_holdout_seasons"] += 1
-            else:
-                information_dump["failed_holdout_seasons"] = 0
+    return final_price, state
 
-        # Track general low sales for circuit breaker (cures 3d8tDh deadlock)
-        if units_sold_so_far < 42:
-            information_dump["consecutive_low_sales"] += 1
-        else:
-            information_dump["consecutive_low_sales"] = 0
 
-        # Record rival sellout timing
-        sellout_t = information_dump["current_season_sellout_t"] if information_dump["current_season_sellout_t"] is not None else 101
-        information_dump["rival_sellout_periods"].append(sellout_t)
-        if sellout_t <= 100:
-            information_dump["rival_sold_out_seasons"] += 1
+# -----------------------------------------------------------------------------
+# 1. State Management & Initialization
+# -----------------------------------------------------------------------------
+def _initialize_or_get_state(information_dump: Optional[Any]) -> Dict[str, Any]:
+    """Ensures information_dump exists and contains all required tracking structures."""
+    if isinstance(information_dump, dict) and "total_capacity" in information_dump:
+        return information_dump
 
-        information_dump["current_season_sellout_t"] = None
-        return 65.0, information_dump
+    return {
+        "total_capacity": DEFAULT_TOTAL_CAPACITY,
+        "rival_season_medians": [],
+        "rival_ema_price": DEFAULT_NEUTRAL_PRICE,
+        "rival_profile": "balanced",
+        "season_sales_history": [],
+        "rival_sold_out_seasons": 0,
+        "rival_sellout_periods": [],
+        "my_last_price": DEFAULT_NEUTRAL_PRICE,
+        "rival_last_price": DEFAULT_NEUTRAL_PRICE,
+        "price_demand_stats": {},           # bucket -> [total_demand, count_periods]
+        "current_season_sellout_t": None,
+        "failed_holdout_seasons": 0,        # Count seasons where deep dumper holdout got < 15 sales
+        "consecutive_low_sales": 0,         # Count seasons where sales were < 42
+        "detected_low_wtp": False           # Dynamically set when high prices (> $70) fail to convert
+    }
 
-    if remaining_capacity <= 0:
-        return 95.0, information_dump
 
-    # -------------------------------------------------------------------------
-    # 4. Extract Rival Historical Price Safely (Row 0 = Ours, Row 1 = Rival)
-    # -------------------------------------------------------------------------
-    latest_rival_price = None
-    rival_recent_avg = information_dump.get("rival_ema_price", 65.0)
-    
+# -----------------------------------------------------------------------------
+# 2. Real-Time Signal Extraction & History Tracking
+# -----------------------------------------------------------------------------
+def _calculate_units_sold(demand_history: Union[np.ndarray, List[int], None]) -> int:
+    """Calculates total units sold so far in the current selling season."""
+    if demand_history is None or len(demand_history) == 0:
+        return 0
+    return int(np.sum(demand_history))
+
+
+def _extract_last_demand(demand_history: Union[np.ndarray, List[int], None]) -> float:
+    """Extracts realized demand from the most recent completed period."""
+    if demand_history is None or len(demand_history) == 0:
+        return 0.0
+    return float(demand_history[-1])
+
+
+def _extract_latest_rival_price(
+    prices_history: Union[np.ndarray, List[float], None]
+) -> Optional[float]:
+    """Safely extracts the most recent valid rival price from the 2xT price array."""
+    if prices_history is None:
+        return None
+
+    if isinstance(prices_history, np.ndarray) and prices_history.ndim == 2:
+        if prices_history.shape[1] > 0 and prices_history.shape[0] >= 2:
+            raw_price = float(prices_history[1, -1])
+            if raw_price < SERVER_SOLDOUT_PRICE_THRESHOLD:
+                return raw_price
+    elif isinstance(prices_history, (list, np.ndarray)) and len(prices_history) > 0:
+        raw_price = float(prices_history[-1])
+        if raw_price < SERVER_SOLDOUT_PRICE_THRESHOLD:
+            return raw_price
+
+    return None
+
+
+def _update_real_time_signals(
+    period: int,
+    prices_history: Union[np.ndarray, List[float], None],
+    demand_history: Union[np.ndarray, List[int], None],
+    has_rival_capacity: bool,
+    state: Dict[str, Any]
+) -> None:
+    """Updates EMA tracking, rival sellout timing, and price-response statistics."""
+    # 1. Track first sellout period for competitor
+    if not has_rival_capacity and state.get("current_season_sellout_t") is None:
+        state["current_season_sellout_t"] = period
+
+    # 2. Update rival price and EMA
+    latest_rival = _extract_latest_rival_price(prices_history)
+    if latest_rival is not None:
+        state["rival_last_price"] = latest_rival
+        if has_rival_capacity and latest_rival > 5.0:
+            smoothing_factor = 0.25
+            current_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
+            updated_ema = smoothing_factor * latest_rival + (1.0 - smoothing_factor) * current_ema
+            state["rival_ema_price"] = float(updated_ema)
+
+    # 3. Log realized demand against our previous price bucket ($5 granularity)
     if (
-        prices_historical_in_current_season is not None
-        and prices_historical_in_current_season.ndim == 2
-        and prices_historical_in_current_season.shape[1] > 0
-        and prices_historical_in_current_season.shape[0] >= 2
+        isinstance(prices_history, np.ndarray)
+        and prices_history.ndim == 2
+        and prices_history.shape[1] > 0
     ):
-        raw_rival_price = float(prices_historical_in_current_season[1, -1])
-        if raw_rival_price < 200.0:
-            latest_rival_price = raw_rival_price
-            information_dump["rival_last_price"] = latest_rival_price
-            
-            if competitor_has_capacity_current_period_in_current_season and latest_rival_price > 5.0:
-                alpha = 0.25
-                rival_recent_avg = alpha * latest_rival_price + (1.0 - alpha) * rival_recent_avg
-                information_dump["rival_ema_price"] = rival_recent_avg
-                
-            # Record realized demand against our last price bucket ($5 granularity)
-            my_prev_price = float(prices_historical_in_current_season[0, -1])
-            bucket = int(round(my_prev_price / 5.0) * 5)
-            stats = information_dump["price_demand_stats"].get(bucket, [0.0, 0])
-            stats[0] += last_demand
-            stats[1] += 1
-            information_dump["price_demand_stats"][bucket] = stats
+        our_prev_price = float(prices_history[0, -1])
+        last_demand = _extract_last_demand(demand_history)
+        bucket = int(round(our_prev_price / 5.0) * 5)
+        stats = state["price_demand_stats"].get(bucket, [0.0, 0])
+        stats[0] += last_demand
+        stats[1] += 1
+        state["price_demand_stats"][bucket] = stats
+
+
+# -----------------------------------------------------------------------------
+# 3. Inventory Pacing Calculus
+# -----------------------------------------------------------------------------
+def _calculate_inventory_gap(
+    current_period: int,
+    remaining_capacity: int,
+    total_capacity: int
+) -> float:
+    """
+    Computes the difference between actual remaining inventory and target booking curve:
+    Gap > 0: Behind pace (surplus unsold seats) -> requires undercutting.
+    Gap < 0: Ahead of pace (scarcity) -> permits price premium.
+    """
+    progress = (current_period - 1) / float(TOTAL_SELLING_PERIODS)
+    target_depleted = total_capacity * (0.85 * progress + 0.15 * (progress ** 2))
+    target_remaining = total_capacity - target_depleted
+    return float(remaining_capacity - target_remaining)
+
+
+# -----------------------------------------------------------------------------
+# 4. Competitor Archetype Classification
+# -----------------------------------------------------------------------------
+def _classify_rival_archetype(median_price: float) -> str:
+    """Maps historical competitor median price to a strategic archetype."""
+    if median_price <= 20.0:
+        return "deep_dumper"
+    if median_price <= 38.0:
+        return "dumper"
+    if median_price <= 58.0:
+        return "aggressive"
+    if median_price <= 78.0:
+        return "balanced"
+    return "high"
+
+
+# -----------------------------------------------------------------------------
+# 5. Monopoly Regime Pricing Engine
+# -----------------------------------------------------------------------------
+def _calculate_monopoly_price(
+    required_burn_rate: float,
+    remaining_capacity: int,
+    state: Dict[str, Any]
+) -> float:
+    """
+    Prices dynamically when rival is out of stock.
+    Adapts automatically between Standard WTP and Low-WTP market regimes.
+    """
+    is_deep_dumper = state.get("rival_profile") == "deep_dumper"
+    failed_holdouts = state.get("failed_holdout_seasons", 0)
+    is_low_wtp = state.get("detected_low_wtp", False)
+
+    # Case 1: Post-Deep-Dumper Holdout Clearance
+    if is_deep_dumper:
+        if failed_holdouts >= 1:
+            return 54.0 if required_burn_rate <= 1.0 else 46.0
+        return 64.0 if required_burn_rate <= 1.2 else 58.0
+
+    # Case 2: Low-WTP Empirical Sweet Spot (data/v5 Calibrated)
+    if is_low_wtp:
+        if required_burn_rate <= 0.40 and remaining_capacity <= 8:
+            return 64.0
+        if required_burn_rate <= 0.70:
+            return 60.0
+        if required_burn_rate <= 1.05:
+            return 56.0
+        if required_burn_rate <= 1.35:
+            return 52.0
+        return max(46.0, 52.0 - (required_burn_rate - 1.35) * 10.0)
+
+    # Case 3: Standard Multi-Tier Monopoly
+    if required_burn_rate <= 0.35 and remaining_capacity <= 8:
+        return 92.0
+    if required_burn_rate <= 0.55:
+        return 84.0
+    if required_burn_rate <= 0.85:
+        return 78.0
+    if required_burn_rate <= 1.25:
+        return 72.0
+    return max(48.0, 72.0 - (required_burn_rate - 1.25) * 14.0)
+
+
+# -----------------------------------------------------------------------------
+# 6. Duopoly Regime Pricing Engine
+# -----------------------------------------------------------------------------
+def _calculate_duopoly_price(
+    period: int,
+    season: int,
+    inventory_gap: float,
+    required_burn_rate: float,
+    remaining_capacity: int,
+    state: Dict[str, Any]
+) -> float:
+    """Computes asking price during active duopoly competition against stock-bearing rival."""
+    rival_profile = state.get("rival_profile", "balanced")
+    latest_rival = state.get("rival_last_price")
+    rival_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
+    failed_holdouts = state.get("failed_holdout_seasons", 0)
+    consecutive_low_sales = state.get("consecutive_low_sales", 0)
+
+    is_deep_dumper = (
+        rival_profile == "deep_dumper"
+        or (latest_rival is not None and latest_rival <= 19.5 and rival_ema <= 19.5)
+    )
+
+    # Branch 1: Deep Dumper Defense (FuturisticSalamander / RussetBat)
+    if is_deep_dumper:
+        if failed_holdouts >= 2:
+            anchor = 34.0 if inventory_gap > 3.0 else 38.0
+            return anchor - min(6.0, 1.0 + 0.3 * max(0.0, inventory_gap))
+        return 58.0
+
+    # Branch 2: Universal Low-Sales Circuit Breaker (Cures 3d8tDh SageSloth deadlock)
+    if consecutive_low_sales >= 2:
+        hist_med = (
+            float(np.median(state["rival_season_medians"]))
+            if len(state["rival_season_medians"]) > 0
+            else rival_ema
+        )
+        breaker_price = min(hist_med - 0.5, rival_ema - 0.5)
+        if inventory_gap > 3.0:
+            breaker_price -= min(4.0, 0.35 * inventory_gap)
+        return breaker_price
+
+    # Branch 3: Standard Dynamic Pacing Engine
+    anchor_price = _determine_duopoly_anchor(period, season, inventory_gap, state)
+    target_price = _apply_pacing_differential(anchor_price, inventory_gap)
+
+    # Guard 1: High-Price Ceiling Cap in Duopoly
+    if target_price > 54.0 and inventory_gap > 2.5 and period >= 15:
+        target_price = 52.0
+
+    # Guard 2: Mid-Season Micro-Probing
+    if 15 <= period <= 65 and abs(inventory_gap) <= 3.5:
+        if period % 6 == 0:
+            target_price += 3.5
+        elif period % 6 == 3:
+            target_price -= 2.5
+
+    # Guard 3: Late-Season Opportunistic Exploitation & Spoilage Ramp (t >= 75)
+    if period >= 75:
+        target_price = _apply_late_season_clearance(
+            period,
+            target_price,
+            anchor_price,
+            rival_ema,
+            inventory_gap,
+            required_burn_rate,
+            remaining_capacity
+        )
+
+    return target_price
+
+
+def _determine_duopoly_anchor(
+    period: int,
+    season: int,
+    inventory_gap: float,
+    state: Dict[str, Any]
+) -> float:
+    """Computes smoothed rival price anchor with follower and anti-dumping guard."""
+    rival_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
+    rival_medians = state.get("rival_season_medians", [])
+
+    if season == 1 and period <= 5:
+        return 68.0
+
+    if len(rival_medians) > 0:
+        hist_med = float(np.median(rival_medians))
+        anchor = 0.65 * rival_ema + 0.35 * hist_med
     else:
-        latest_rival_price = information_dump.get("rival_last_price", 65.0)
+        anchor = rival_ema
 
-    # -------------------------------------------------------------------------
-    # 5. Continuous Dynamic Pacing Curve & Inventory Gap
-    # -------------------------------------------------------------------------
-    progress = (t - 1) / 100.0
-    target_sold = TOTAL_CAPACITY * (0.85 * progress + 0.15 * (progress ** 2))
-    target_remaining = TOTAL_CAPACITY - target_sold
-    inventory_gap = remaining_capacity - target_remaining
+    # Anti-Dumping & Copycat Guard
+    if anchor < 38.0:
+        anchor = float(np.clip(44.0 - 0.8 * max(0.0, inventory_gap - 1.5), 35.0, 44.0))
 
-    # -------------------------------------------------------------------------
-    # 6. Pricing Strategy Selection
-    # -------------------------------------------------------------------------
-    rival_profile = information_dump.get("rival_profile", "balanced")
-    is_deep_dumper = (rival_profile == "deep_dumper" or (latest_rival_price is not None and latest_rival_price <= 19.5 and rival_recent_avg <= 19.5))
-    failed_holdouts = information_dump.get("failed_holdout_seasons", 0)
-    low_sales_streak = information_dump.get("consecutive_low_sales", 0)
+    return anchor
 
-    # === REGIME A: MONOPOLY MODE (Competitor Sold Out) ===
-    if not competitor_has_capacity_current_period_in_current_season:
-        if is_deep_dumper:
-            # If holdout previously produced 0 sales at $64, scale down to empirical conversion zone ($54)
-            if failed_holdouts >= 1:
-                target_price = 54.0 if required_burn_rate <= 1.0 else 46.0
-            else:
-                target_price = 64.0 if required_burn_rate <= 1.2 else 58.0
-        else:
-            # Realigned monopoly tiers matching customer WTP distribution
-            if required_burn_rate <= 0.35 and remaining_capacity <= 8:
-                target_price = 92.0  # Harvest "Up to High" buyers when seats are scarce
-            elif required_burn_rate <= 0.55:
-                target_price = 84.0  # Upper leisure tier
-            elif required_burn_rate <= 0.85:
-                target_price = 78.0  # Core leisure yield
-            elif required_burn_rate <= 1.25:
-                target_price = 72.0  # Mid leisure transition
-            else:
-                # High burn rate: smooth descent into budget conversion band ($52-$56)
-                target_price = max(48.0, 72.0 - (required_burn_rate - 1.25) * 14.0)
 
-    # === REGIME B: DUOPOLY MODE (Competitor Has Stock) ===
-    else:
-        if is_deep_dumper:
-            # Deep Dumper Defense with Circuit Breaker:
-            if failed_holdouts >= 2:
-                # Break out of the $0 trap: contest volume at $32-$36 to earn $200k+ instead of $0
-                anchor_price = 34.0 if inventory_gap > 3.0 else 38.0
-                target_price = anchor_price - min(6.0, 1.0 + 0.3 * max(0.0, inventory_gap))
-            else:
-                # Standard holdout: hold $58.00 during duopoly to let rival cap out at $1,472
-                target_price = 58.0
-        elif low_sales_streak >= 2:
-            # Universal Circuit Breaker for persistent low-price deadlocks (e.g. SageSloth 3d8tDh)
-            hist_med = float(np.median(information_dump["rival_season_medians"])) if len(information_dump["rival_season_medians"]) > 0 else rival_recent_avg
-            target_price = min(hist_med - 0.5, rival_recent_avg - 0.5)
-            if inventory_gap > 3.0:
-                target_price -= min(4.0, 0.35 * inventory_gap)
-        else:
-            if current_selling_season == 1 and t <= 5:
-                anchor_price = 68.0
-            else:
-                if len(information_dump["rival_season_medians"]) > 0:
-                    hist_med = float(np.median(information_dump["rival_season_medians"]))
-                    anchor_price = 0.65 * rival_recent_avg + 0.35 * hist_med
-                else:
-                    anchor_price = rival_recent_avg
+def _apply_pacing_differential(anchor_price: float, inventory_gap: float) -> float:
+    """Applies smooth undercutting when behind pace and scarcity premium when ahead."""
+    if inventory_gap > 1.5:
+        undercut = min(7.50, 0.80 + 0.28 * (inventory_gap - 1.5))
+        return anchor_price - undercut
+    if inventory_gap < -2.5:
+        premium = min(14.0, 1.0 + 0.45 * abs(inventory_gap))
+        return anchor_price + premium
+    return anchor_price - 0.80
 
-                # Anti-Dumping & Copycat Guard: smooth continuous transition
-                if anchor_price < 38.0:
-                    anchor_price = np.clip(44.0 - 0.8 * max(0.0, inventory_gap - 1.5), 35.0, 44.0)
 
-            # Dynamic Pacing Undercut / Premium
-            if inventory_gap > 2.0:
-                undercut = min(8.0, 1.5 + 0.35 * inventory_gap)
-                target_price = anchor_price - undercut
-            elif inventory_gap < -3.0:
-                premium = min(14.0, 1.0 + 0.45 * abs(inventory_gap))
-                target_price = anchor_price + premium
-            else:
-                target_price = anchor_price - 1.0
+def _apply_late_season_clearance(
+    period: int,
+    current_target: float,
+    anchor_price: float,
+    rival_ema: float,
+    inventory_gap: float,
+    required_burn_rate: float,
+    remaining_capacity: int
+) -> float:
+    r"""
+    Handles late clearance ($t \ge 75$):
+    - Counters rivals that spike price late (e.g. ConvivialCrane) by holding $52–$54.
+    - Accelerates liquidation when inventory is behind schedule to guarantee zero spoilage.
+    """
+    if rival_ema >= 54.0 and required_burn_rate <= 1.15:
+        return min(54.0, rival_ema - 2.0)
 
-            # High-Price Ceiling Guard in Duopoly (The LoutishMacaque / Old V1 Fix)
-            # If competitor prices high ($70+), quoting $64+ yields near-zero demand in early/mid season.
-            # Cap target_price at $52-$54 if behind pace to stimulate volume and prevent late-season panic dumping.
-            if target_price > 54.0 and inventory_gap > 3.0 and t >= 15:
-                target_price = 52.0
+    if inventory_gap > 3.0 or (period >= 90 and remaining_capacity >= 2):
+        urgency_factor = (period - 74) / 26.0
+        spoilage_discount = urgency_factor * max(0.0, (required_burn_rate - 0.80) * 12.0)
+        return min(current_target, anchor_price - 1.5) - spoilage_discount
 
-            # Micro-Probing in early/mid season
-            if 15 <= t <= 65 and abs(inventory_gap) <= 4.0:
-                if t % 6 == 0:
-                    target_price += 4.0
-                elif t % 6 == 3:
-                    target_price -= 3.5
+    return current_target
 
-            # Late-Season Anti-Spoilage Clearance (Periods 75 - 100)
-            if t >= 75 and (inventory_gap > 3.5 or (t >= 90 and remaining_capacity >= 2)):
-                urgency_factor = (t - 74) / 26.0
-                spoilage_discount = urgency_factor * max(0.0, (required_burn_rate - 0.80) * 14.0)
-                target_price = min(target_price, anchor_price - 2.0) - spoilage_discount
 
-    # -------------------------------------------------------------------------
-    # 7. Clip to Viable Bounds ($25.0 - $100.0) & Persist State
-    # -------------------------------------------------------------------------
-    final_price = float(np.clip(target_price, 25.0, 100.0))
-    information_dump["my_last_price"] = final_price
-    information_dump["last_period_priced"] = t
+# -----------------------------------------------------------------------------
+# 7. End-of-Season Inter-Season Processing (Period 101)
+# -----------------------------------------------------------------------------
+def _handle_end_of_season(
+    prices_history: Union[np.ndarray, List[float], None],
+    demand_history: Union[np.ndarray, List[int], None],
+    state: Dict[str, Any]
+) -> Tuple[float, Dict[str, Any]]:
+    """Updates cross-season learning metrics, archetype classification, and low-WTP flags."""
+    # 1. Update rival price medians
+    if (
+        isinstance(prices_history, np.ndarray)
+        and prices_history.ndim == 2
+        and prices_history.shape[0] >= 2
+    ):
+        rival_season_prices = prices_history[1, :]
+        valid_prices = rival_season_prices[rival_season_prices < SERVER_SOLDOUT_PRICE_THRESHOLD]
+        if len(valid_prices) > 0:
+            season_med = float(np.median(valid_prices))
+            state["rival_season_medians"].append(season_med)
+            overall_med = float(np.median(state["rival_season_medians"]))
+            state["rival_profile"] = _classify_rival_archetype(overall_med)
+
+    # 2. Track season sales history and circuit breaker alarms
+    units_sold = _calculate_units_sold(demand_history)
+    state["season_sales_history"].append(units_sold)
+
+    if state.get("rival_profile") == "deep_dumper":
+        state["failed_holdout_seasons"] = (
+            state.get("failed_holdout_seasons", 0) + 1 if units_sold < 15 else 0
+        )
+
+    state["consecutive_low_sales"] = (
+        state.get("consecutive_low_sales", 0) + 1 if units_sold < 42 else 0
+    )
+
+    # 3. Track rival sellout timing
+    sellout_period = (
+        state["current_season_sellout_t"]
+        if state.get("current_season_sellout_t") is not None
+        else (TOTAL_SELLING_PERIODS + 1)
+    )
+    state["rival_sellout_periods"].append(sellout_period)
+    if sellout_period <= TOTAL_SELLING_PERIODS:
+        state["rival_sold_out_seasons"] = state.get("rival_sold_out_seasons", 0) + 1
+
+    # 4. Check empirical WTP ceiling from transactions
+    stats_dict = state.get("price_demand_stats", {})
+    high_buckets = [b for b in stats_dict.keys() if b >= 70]
+    high_periods = sum(stats_dict[b][1] for b in high_buckets)
+    high_sales = sum(stats_dict[b][0] for b in high_buckets)
     
-    return final_price, information_dump
+    rival_medians = state.get("rival_season_medians", [])
+    if (high_periods >= 5 and high_sales == 0) or (
+        len(rival_medians) >= 2
+        and np.median(rival_medians) <= 53.0
+        and max(rival_medians) <= 56.0
+        and high_sales == 0
+    ):
+        state["detected_low_wtp"] = True
+
+    state["current_season_sellout_t"] = None
+    return DEFAULT_NEUTRAL_PRICE, state
+
+
+# -----------------------------------------------------------------------------
+# 8. Bounds Enforcement & Decision Persistence
+# -----------------------------------------------------------------------------
+def _clamp_price(price: float) -> float:
+    """Clamps asking price strictly within permissible competition boundaries ($25–$100)."""
+    return float(np.clip(price, MIN_PRICE, MAX_PRICE))
+
+
+def _persist_decision(price: float, period: int, state: Dict[str, Any]) -> None:
+    """Records the chosen price and period in state dictionary."""
+    state["my_last_price"] = price
+    state["last_period_priced"] = period
