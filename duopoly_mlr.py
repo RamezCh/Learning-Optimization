@@ -407,8 +407,10 @@ def _calculate_duopoly_price(
         )
 
     # Guard 2: High-Price Ceiling Cap
-    if target_price > 54.0 and inventory_gap > 2.5 and period >= 15:
-        target_price = 52.0
+    is_low_wtp = state.get("detected_low_wtp", False)
+    duopoly_cap = 54.0 if is_low_wtp else 68.0
+    if target_price > duopoly_cap and inventory_gap > 2.5 and period >= 15:
+        target_price = duopoly_cap - 2.0
 
     # Guard 3: Late-Season Clearance & High-Rival Counter
     if period >= 75:
@@ -418,7 +420,8 @@ def _calculate_duopoly_price(
             rival_recent_avg,
             inventory_gap,
             required_burn_rate,
-            remaining_capacity
+            remaining_capacity,
+            is_low_wtp
         )
 
     return target_price
@@ -478,15 +481,17 @@ def _apply_late_season_clearance(
     rival_recent_avg: float,
     inventory_gap: float,
     required_burn_rate: float,
-    remaining_capacity: int
+    remaining_capacity: int,
+    is_low_wtp: bool = False
 ) -> float:
     r"""
     Handles late clearance ($t \ge 75$):
-    - Exploits late price spikes by holding $52–$54 if competitor is high.
+    - Exploits late price spikes by holding $52–$54 under low WTP or $78 under high WTP.
     - Accelerates clearance when inventory lags to prevent seat spoilage.
     """
+    late_cap = 54.0 if is_low_wtp else 78.0
     if rival_recent_avg >= 54.0 and required_burn_rate <= 1.15:
-        return min(54.0, rival_recent_avg - 2.0)
+        return min(late_cap, rival_recent_avg - 2.0)
 
     if inventory_gap > 3.0 or (period >= 90 and remaining_capacity >= 2):
         urgency = (period - 74) / 26.0
