@@ -35,19 +35,23 @@ MIN_OBSERVATIONS_FOR_TRAINING: int = 80
 TRAINING_WINDOW_SIZE: int = 2500
 
 REGIME_PRESETS_MLR: Dict[str, Dict[str, Any]] = {
-    "regime_1_high": {
-        "intercept": 0.605, "b_p": -0.0146, "b_riv": 0.0138, "b_diff": 0.0284, "b_t": 0.439,
-        "sweet_spot": (74.0, 84.0), "max_price": 95.0
+    "low_demand": {
+        "intercept": 0.2145, "b_p": -0.0028, "b_riv": 0.0026, "b_diff": 0.0054, "b_t": 0.2931,
+        "sweet_spot": (22.0, 30.0), "max_price": 36.0, "avg_demand": 0.347
     },
-    "regime_2_medium": {
-        "intercept": 1.245, "b_p": -0.0171, "b_riv": -0.0022, "b_diff": 0.0149, "b_t": 0.714,
-        "sweet_spot": (64.0, 72.0), "max_price": 85.0
+    "average_demand": {
+        "intercept": 0.9696, "b_p": -0.0093, "b_riv": -0.0014, "b_diff": 0.0079, "b_t": 0.3998,
+        "sweet_spot": (32.0, 44.0), "max_price": 60.0, "avg_demand": 0.477
     },
-    "regime_3_low": {
-        "intercept": 2.233, "b_p": -0.0258, "b_riv": -0.0131, "b_diff": 0.0128, "b_t": 0.833,
-        "sweet_spot": (52.0, 62.0), "max_price": 68.0
+    "high_demand": {
+        "intercept": 2.2329, "b_p": -0.0258, "b_riv": -0.0131, "b_diff": 0.0128, "b_t": 0.8327,
+        "sweet_spot": (44.0, 52.0), "max_price": 64.0, "avg_demand": 0.803
     }
 }
+# Backward-compatibility aliases
+REGIME_PRESETS_MLR["regime_1_high"] = REGIME_PRESETS_MLR["high_demand"]
+REGIME_PRESETS_MLR["regime_2_medium"] = REGIME_PRESETS_MLR["average_demand"]
+REGIME_PRESETS_MLR["regime_3_low"] = REGIME_PRESETS_MLR["low_demand"]
 
 
 # -----------------------------------------------------------------------------
@@ -77,7 +81,7 @@ def p(
 
     # 2. Terminal Period Check (Period 101 Feedback Only)
     if period > TOTAL_SELLING_PERIODS:
-        return _clamp_price(state.get("my_last_price", DEFAULT_RIVAL_PRICE)), state
+        return _clamp_price(state.get("my_last_price", DEFAULT_RIVAL_PRICE), state), state
 
     # 3. Inventory & Capacity Status
     units_sold = _calculate_units_sold(demand_historical_in_current_season)
@@ -121,7 +125,7 @@ def p(
         )
 
     # 7. Safety Bounds & State Persistence
-    final_price = _clamp_price(raw_price)
+    final_price = _clamp_price(raw_price, state)
     _persist_decision(final_price, state)
 
     return final_price, state
@@ -171,6 +175,7 @@ def _handle_season_transition(
 ) -> None:
     """Updates circuit breaker streak, classifies macroeconomic regime, and refits the MLR model."""
     prev_season_sales = _calculate_units_sold(demand_history)
+    state.setdefault("season_sales_history", []).append(prev_season_sales)
     state["consecutive_low_sales"] = (
         state.get("consecutive_low_sales", 0) + 1 if prev_season_sales < 42 else 0
     )
@@ -185,25 +190,37 @@ def _handle_season_transition(
 def _classify_and_update_regime(state: Dict[str, Any]) -> None:
     """Classifies the market into one of 3 empirical regimes based on cumulative transaction stats."""
     stats_dict = state.get("price_demand_stats", {})
-    high_buckets = [b for b in stats_dict.keys() if b >= 70]
-    high_periods = sum(stats_dict[b][1] for b in high_buckets)
-    high_sales = sum(stats_dict[b][0] for b in high_buckets)
+    mid_high_buckets = [b for b in stats_dict.keys() if b >= 55]
+    mid_high_periods = sum(stats_dict[b][1] for b in mid_high_buckets)
+    mid_high_sales = sum(stats_dict[b][0] for b in mid_high_buckets)
     rival_medians = state.get("rival_season_medians", [])
+    sales_hist = state.get("season_sales_history", [])
+    consec_low = state.get("consecutive_low_sales", 0)
 
-    # 1. Low-WTP Surge (Regime 3, e.g. data/v5): zero sales at >= $70, or rival consistently <= $55
-    if (high_periods >= 4 and high_sales == 0) or (
-        len(rival_medians) >= 2
-        and np.median(rival_medians) <= 55.0
-        and high_sales == 0
+    # 1. Low-Demand Regime (data/v5.1, data/mlr, data/poisson_logit):
+    # Decoupled from rival price: triggered if conversion above $55 is zero, or sales < 42
+    if (
+        (mid_high_periods >= 4 and mid_high_sales == 0)
+        or consec_low >= 1
+        or (len(rival_medians) >= 1 and np.median(rival_medians) <= 34.0)
+        or (len(sales_hist) >= 2 and np.mean(sales_hist[-2:]) < 40.0)
     ):
-        state["detected_regime"] = "regime_3_low"
+        state["detected_regime"] = "low_demand"
         state["detected_low_wtp"] = True
-    # 2. High-WTP Premium (Regime 1, e.g. data/v1/v4): > 25% conversion at >= $75
-    elif high_periods >= 4 and (high_sales / float(high_periods)) >= 0.25:
-        state["detected_regime"] = "regime_1_high"
-        state["detected_low_wtp"] = False
+
+    # 2. High-Demand Regime (data/v5):
+    # Surging arrival volume (mean sales >= 72) with truncated WTP (0 high sales)
+    elif (
+        len(sales_hist) >= 2
+        and np.mean(sales_hist[-2:]) >= 72.0
+        and mid_high_sales == 0
+    ):
+        state["detected_regime"] = "high_demand"
+        state["detected_low_wtp"] = True
+
+    # 3. Average / Standard Demand Regime (data/v4, data/v3, data/v1):
     else:
-        state["detected_regime"] = "regime_2_medium"
+        state["detected_regime"] = "average_demand"
         state["detected_low_wtp"] = False
 
     preset = REGIME_PRESETS_MLR[state["detected_regime"]]
@@ -381,8 +398,11 @@ def _calculate_duopoly_price(
     if latest_rival_price <= 19.5 and rival_recent_avg <= 19.5:
         min_periods_needed = int(np.ceil(remaining_capacity / 1.85))
         safe_holdout_deadline = max(55, (TOTAL_SELLING_PERIODS + 1) - min_periods_needed)
-        if period < safe_holdout_deadline:
+        is_low = (state.get("detected_regime") == "low_demand" or consecutive_low_sales >= 1)
+        if period < safe_holdout_deadline and not is_low:
             return 58.0
+        # In low demand or after failed holdout, actively contest volume to prevent $0 lockout
+        return max(18.0, min(latest_rival_price - 0.5, 24.0))
 
     # Branch 3: Closed-Form MLR Revenue Optimization
     target_price = _solve_closed_form_optimal_price(
@@ -395,16 +415,24 @@ def _calculate_duopoly_price(
 
     # Guard 1: Anti-Dumping & Copycat Protection
     if target_price < 38.0 and rival_recent_avg < 38.0:
-        target_price = max(
-            target_price,
-            float(np.clip(44.0 - 0.8 * max(0.0, inventory_gap - 1.5), 35.0, 44.0))
-        )
+        is_low = (state.get("detected_regime") == "low_demand" or consecutive_low_sales >= 2)
+        if is_low:
+            target_price = max(target_price, min(rival_recent_avg - 0.5, 28.0))
+        else:
+            target_price = max(
+                target_price,
+                float(np.clip(44.0 - 0.8 * max(0.0, inventory_gap - 1.5), 35.0, 44.0))
+            )
 
-    # Guard 2: High-Price Ceiling Cap
+    # Guard 2: High-Price Ceiling Cap & High-Rival Exploitation
     is_low_wtp = state.get("detected_low_wtp", False)
-    duopoly_cap = 54.0 if is_low_wtp else 68.0
-    if target_price > duopoly_cap and inventory_gap > 2.5 and period >= 15:
-        target_price = duopoly_cap - 2.0
+    if rival_recent_avg >= 58.0:
+        dyn_ceiling = float(np.clip(46.0 - 1.5 * max(0.0, inventory_gap), 26.0, 48.0))
+        target_price = min(target_price, dyn_ceiling)
+    else:
+        duopoly_cap = 50.0 if is_low_wtp else 66.0
+        if target_price > duopoly_cap and inventory_gap > 2.0:
+            target_price = duopoly_cap - 2.0
 
     # Guard 3: Late-Season Clearance & High-Rival Counter
     if period >= 75:
@@ -516,9 +544,14 @@ def _apply_late_season_clearance(
 # -----------------------------------------------------------------------------
 # 7. Bounds Enforcement & Decision Persistence
 # -----------------------------------------------------------------------------
-def _clamp_price(price: float) -> float:
-    """Clamps asking price strictly within permissible competition boundaries ($25–$100)."""
-    return float(np.clip(price, MIN_PRICE, MAX_PRICE))
+def _clamp_price(price: float, state: Optional[Dict[str, Any]] = None) -> float:
+    """Clamps asking price strictly within permissible competition boundaries ($18–$100)."""
+    min_p = (
+        18.0
+        if (state and (state.get("detected_regime") == "low_demand" or state.get("consecutive_low_sales", 0) >= 2))
+        else MIN_PRICE
+    )
+    return float(np.clip(price, min_p, MAX_PRICE))
 
 
 def _persist_decision(price: float, state: Dict[str, Any]) -> None:

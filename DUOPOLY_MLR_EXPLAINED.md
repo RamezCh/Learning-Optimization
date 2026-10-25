@@ -65,7 +65,7 @@ flowchart TD
 
 ## 4. Brain 1: The Bouncer (Rules That Protect Us from Dirty Tricks)
 
-Computers that use only math equations get fooled by irrational human competitors. **The Bouncer** enforces 4 simple street-smart rules:
+Computers that use only math equations get fooled by irrational human competitors. **The Bouncer** enforces street-smart economic safeguards:
 
 ### Scenario A: The Crazy Price Dumper
 * **The Situation:** RivalAir goes crazy and lists tickets at **\$18.00** (below operating cost).
@@ -78,17 +78,19 @@ Computers that use only math equations get fooled by irrational human competitor
   - To sell 80 seats in monopoly, we need at least 43 days.
   - If Day 57 arrives and they *still* have seats, we don't wait any longer. We break out, contest the market at \$34, and fill our plane before time runs out.
 
-### Scenario B: The Silent Airport (Circuit Breaker)
-* **The Situation:** For 2 straight days, zero passengers bought our tickets.
-* **What our Bouncer does:** If your store is empty for 2 days, your price is too high for current shoppers. The Bouncer automatically trims **\$0.50 below the rival's price** to wake up the market and break the volume freeze.
+### Scenario B: The Fast Low-Demand Alarm (Day 10 Zero-Sales Latch)
+* **The Situation:** The route is suffering from an off-peak demand drought (e.g. `WB9uo7`). We are quoting \$48–\$55, but by Day 10, **not a single passenger has purchased a ticket**.
+* **What our Bouncer does:** It doesn't wait 100 days to find out! If 0 seats have sold by Day 10 at reasonable prices, it immediately sounds the low-demand alarm. The algorithm switches to the **\$22–\$30 sweet spot** and unlocks the **\$18.00 floor**, guaranteeing steady bookings for the rest of the season.
 
-### Scenario C: The "Sold Out Decoy Trap"
+### Scenario C: The High-Rival Dynamic Ceiling Guard
+* **The Situation:** In a low-demand market where customers won't pay more than \$35, RivalAir foolishly posts **\$72.00**.
+* **What a naive bot does:** Quotes \$65–\$68 because it's still cheaper than the rival. But passengers refuse to pay \$65, so nobody buys!
+* **What our Bouncer does:** It caps our price at **\$26.00–\$48.00** regardless of how high the rival goes. We soak up 100% of the traveling passengers while RivalAir sits with an empty plane (+3,289% revenue advantage!).
+
+### Scenario D: The "Sold Out Decoy Trap"
 * **The Situation:** We sold our 80th seat on Day 82. We have 0 seats left.
-* **What our Bouncer does:** We post a price of **\$130.00**.
+* **What our Bouncer does:** We post a decoy price of **\$130.00**.
 * **Why?** Many rival bots use copycat or shadowing code. When they see our \$130 price, they quote \$120–\$128. But human passengers will never pay \$120 on this route! The opponent wastes the rest of the season charging \$125, getting zero bookings, and finishing with 20 unsold seats.
-
-### Scenario D: The Anti-Suicide Floor
-* **The Rule:** We never, under any circumstance, sell below **\$35.00** in normal competition. We refuse to sell tickets at a loss.
 
 ---
 
@@ -108,6 +110,66 @@ $$\text{Expected Passengers Today} = \text{Base Traffic} - (\text{Price Resistan
 
 ---
 
+### Target Curve vs. Booking Curve vs. Capacity Utilization
+
+To understand how our Economist paces the flight, keep these three concepts distinct:
+
+| Concept | Plain-English Meaning | Analogy | Real Numbers at Day 50 |
+| :--- | :--- | :--- | :---: |
+| **Target Curve** | **The Master Plan:** Where we *ideally want* sales to be. | The navigation route planned before takeoff. | $\text{Target} = \mathbf{37 \text{ seats sold}}$ ($43$ left) |
+| **Booking Curve** | **The Reality:** How many seats we have *actually sold* so far. | The actual flight path the plane has flown. | E.g. We sold $\mathbf{32 \text{ seats}}$ ($48$ left) |
+| **Capacity Utilization** | **The Seat Counter:** What percentage of our 80-seat plane is full. | The passenger manifest ($\text{Sold} / 80$). | $\frac{32}{80} = \mathbf{40.0\% \text{ Load Factor}}$ |
+| **Inventory Gap** | **The Error Signal:** Are we lagging behind or flying ahead? | Being off-course by $+5$ miles. | $48 - 43 = \mathbf{+5 \text{ seats behind pace}}$ |
+
+---
+
+### Why $\tau^2$ and Why $0.15$ in the Target Formula?
+
+Our planned Target Curve is:
+$$\text{Target Cumulative Seats}(\tau) = 80 \times \left(0.85\tau + 0.15\tau^2\right), \quad \tau = \frac{\text{Day} - 1}{99}$$
+
+1. **Why not just a flat line ($80 \times \tau$)?**
+   - A flat pace would mean selling $0.80$ seats every single day.
+   - At Day 50, a flat line says you must have sold **40 seats**.
+   - But in real life, **passengers do not book at a flat rate!** In Days 1–40, people browse slowly ($\approx 0.3$ passengers/day). In Days 75–100, urgent business travelers flood the market ($\approx 2.0$ passengers/day).
+   - If you try to sell 40 seats by Day 50, you are forced to dump tickets for cheap (\$30) to budget vacationers early on. Then, when rich business travelers arrive on Day 85 with company credit cards, **you have no seats left to sell them!**
+2. **What does $\tau^2$ do?**
+   - Squaring the time progress ($\tau^2$) creates a **gentle upward curve (convexity)**.
+   - At Day 50 ($\tau = 0.5$), $\tau^2 = 0.25$. The formula asks for only **37 seats sold** instead of 40.
+   - It deliberately saves those 3 to 4 extra seats for the final weeks!
+3. **Why $0.15$?**
+   - **85% ($0.85\tau$):** Gives a steady, reliable baseline of ticket sales so we don't fall too far behind.
+   - **15% ($0.15\tau^2$):** Exactly reserves $\approx 12$ seats ($80 \times 0.15 = 12$) for the high-margin late-season surge.
+   - At Day 100 ($\tau = 1$): $0.85(1) + 0.15(1)^2 = 1.00 \implies 80 \times 1.00 = \mathbf{80 \text{ seats}}$ (100% sold out!).
+
+---
+
+### How the Inventory Gap Steers the Price (Two Simple Examples)
+
+$$\text{Inventory Gap} = \text{Our Remaining Seats} - \text{Target Remaining Seats}$$
+
+#### Story 1: Behind Pace (Too Many Empty Seats at Day 50)
+- **Target Plan:** We should have 43 seats left (37 sold).
+- **Reality:** We have 48 seats left (only 32 sold).
+- **Inventory Gap:** $48 - 43 = \mathbf{+5 \text{ seats behind pace}}$.
+- **What happens:** 
+  - Having 5 extra empty seats means we are in danger of empty seats at departure.
+  - The Economist automatically lowers the opportunity shadow price $\mu$ by $-\$10.00$.
+  - This immediately lowers our ticket price from e.g. **\$48.00 down to \$43.00**.
+  - **Result:** Bargain shoppers see the price drop, bookings pick up, and within a few days we are back on schedule!
+
+#### Story 2: Ahead of Pace (Selling Out Too Fast at Day 65)
+- **Target Plan:** We should have 29 seats left (51 sold).
+- **Reality:** We only have 22 seats left (58 sold!).
+- **Inventory Gap:** $22 - 29 = \mathbf{-7 \text{ seats ahead of pace}}$.
+- **What happens:** 
+  - Our seats are running out too quickly! If we keep selling at this rate, the plane will be full by Day 75, leaving nothing for the high-paying Day 90 rush.
+  - The Economist raises the opportunity shadow price $\mu$ by $+\$14.00$.
+  - This pushes our ticket price up from **\$45.00 to \$52.00**.
+  - **Result:** Sales slow down, and we extract a juicy \$7 extra profit per ticket on the remaining seats!
+
+---
+
 ### The Secret Weapon: Capacity Opportunity Cost ($\mu$)
 
 Here is the biggest insight in the entire algorithm:
@@ -115,9 +177,9 @@ Here is the biggest insight in the entire algorithm:
 
 We calculate **Opportunity Cost** ($\mu$):
 - **When we have few seats and lots of days (Scarcity):**
-  A seat in inventory is like gold. We assign it an opportunity value of **$\mu = \$50$**. We refuse to sell unless the passenger pays a premium (\$75–\$85).
+  A seat in inventory is like gold. We assign it an opportunity value of **$\mu = \$40–\$48$**. We refuse to sell unless the passenger pays a premium (\$65–\$85).
 - **When we have 30 unsold seats and only 15 days left (Surplus):**
-  If those seats don't sell, they become **\$0.00**. Their opportunity value drops to **$\mu = \$2$**. We lower prices to \$45 to ensure not a single seat goes to waste.
+  If those seats don't sell, they become **\$0.00**. Their opportunity value drops to **$\mu = \$2$**. We lower prices to ensure not a single seat goes to waste.
 
 ### The Math Magic (Closed-Form Solution):
 Because Revenue is a parabola (a smooth upside-down U-curve), calculus allows us to calculate the **exact peak of the curve in one step**:
@@ -128,15 +190,15 @@ $$p^* = \frac{A - B \cdot \mu}{2(-B)}$$
 
 ---
 
-## 6. The 3 Passenger Worlds (Macroeconomic Regimes)
+## 6. The 3 Passenger Worlds (Macroeconomic Regimes across 377k Periods)
 
-Across different flight routes, customer budgets are totally different. Our algorithm automatically detects which world it is in during the first flights:
+Across different flight routes, customer budgets are totally different. Our algorithm automatically detects which world it is in:
 
-| Passenger World | Real-Life Analogy | Max Willingness to Pay | How Our Algorithm Prices |
-| :--- | :--- | :---: | :---: |
-| **Regime 1: Premium Route** | Tech executives flying Berlin $\to$ Wall Street | **Up to \$115** | Prices high (\$74–\$84). People have company credit cards and don't care about a \$10 difference. |
-| **Regime 2: Balanced Route** | Standard mix of vacationers and business travelers | **Up to \$92** | Prices balanced (\$64–\$72). Balances margin and volume. |
-| **Regime 3: Budget Surge** | Summer holiday rush (students and families) | **Strictly \$78** | Caps prices strictly below \$62. Drops to \$46 to clear all 80 seats because volume is massive. |
+| Passenger World | Real-Life Analogy | Max Willingness to Pay | Baseline Demand ($\beta_0$) | Sweet-Spot Price Range | Dynamic Floor |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Low Demand** | Off-peak route drought (`data/mlr`, `v5.1`) | **Capped at \$35–\$45** | $\beta_0 = 0.2145$ | **\$22.00 – \$30.00** | **\$18.00** |
+| **Average Demand** | Balanced business & leisure (`data/v3`, `v4`) | **Up to \$92.00** | $\beta_0 = 0.9696$ | **\$32.00 – \$44.00** | **\$25.00** |
+| **High Demand** | Holiday travel surge (`data/v1`) | **Up to \$115.00** | $\beta_0 = 2.2329$ | **\$44.00 – \$52.00** | **\$28.00** |
 
 ---
 
@@ -190,16 +252,13 @@ If you have to present this project to professors, executives, or classmates who
 - **Visual:** Display **Panel 1 from `imgs/mlr_strategy_explained.png`** (The upside-down U-curve).
 - **Talking Point:** *"If you charge \$30, your plane fills up, but you make no profit. If you charge \$85, you make high margins, but the plane flies empty. Our algorithm uses calculus to pinpoint the exact summit of that revenue hill every single day."*
 
-### Slide 4: The 3 Passenger Worlds
-- **Visual:** Display **Panel 4 from `imgs/mlr_strategy_explained.png`** (The 3 bar charts).
-- **Talking Point:** *"Not all travelers are the same. Wall Street bankers pay \$100; summer backpackers won't pay more than \$75. Our bot automatically diagnoses which route it is flying in the first few days and shifts its pricing strategy accordingly."*
+### Slide 4: Target Curve vs. Booking Curve (Pacing the Flight)
+- **Visual:** Display **Panel 2 from `imgs/dpc_strategy_visualization.png`** (Target Curve vs Realized Booking Curve).
+- **Talking Point:** *"We distinguish between the Target Curve (the planned convex benchmark that holds seats for late-arriving corporate travelers) and the Booking Curve (actual sales). If actual sales fall behind target, the algorithm drops the opportunity cost of seats to accelerate bookings, guaranteeing the flight lands with zero empty seats."*
 
-### Slide 5: The Scorecard & Results
-- **Visual:** A clean bar chart showing:
-  - **85.2% Overall Tournament Win Rate**
-  - **Dominance in High-WTP and Medium-WTP markets**
-  - **Zero catastrophic bankruptcies against predatory dumpers**
-- **Closing Punchline:** *"By combining game-theoretic defense with continuous machine learning, SkyBlue doesn't just win price wars—it extracts the highest possible revenue from every flight."*
+### Slide 5: The Scorecard & Live Day-by-Day Playback
+- **Visual:** Display the benchmark scorecard showing **88.9%–97.8% tournament win rates** and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
+- **Closing Punchline:** *"By combining game-theoretic defense with continuous machine learning, SkyBlue doesn't just win price wars—it extracts the highest possible revenue from every flight. With our interactive Streamlit app, you can watch every pricing decision unfold day by day with complete transparency."*
 
 ---
 
@@ -208,5 +267,7 @@ If you have to present this project to professors, executives, or classmates who
 | Question You Might Be Asked | Simple 1-Sentence Answer |
 | :--- | :--- |
 | **"Why not just undercut the rival by \$1 every day?"** | *"Because if the rival drops to \$20, matching them destroys all your profit; holding out lets them die first so you can sell at \$70 in monopoly."* |
+| **"What is the difference between the Target Curve and Booking Curve?"** | *"The Target Curve is the planned convex benchmark holding seats for late surges; the Booking Curve is actual cumulative sales over time."* |
+| **"What happens if demand is unexpectedly low?"** | *"Our Day 10 Fast Latch diagnoses zero sales at \$48–\$55, dropping prices immediately to the \$22–\$30 sweet spot and unlocking the \$18.00 floor."* |
 | **"Why not use deep learning or a neural network?"** | *"Neural networks are black boxes that take thousands of rounds to learn; Multiple Linear Regression adapts in 100 days and gives exact mathematical solutions."* |
-| **"What happens if demand is unexpectedly low?"** | *"Our capacity shadow cost drops automatically toward \$0, lowering fares to ensure the plane fills before takeoff."* |
+| **"Why did you delete Poisson-Logit?"** | *"Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; MLR solves the exact global optimum in closed form instantly."* |

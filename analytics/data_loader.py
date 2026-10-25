@@ -34,17 +34,16 @@ def discover_datasets(base_dir: str = DATA_BASE_DIR) -> Dict[str, Dict[str, Any]
         rel_path = os.path.relpath(file_path, base_dir)
         filename = os.path.basename(file_path)
         
-        # Determine version label (folder name or filename prefix)
+        # Determine version label from parent folder name if present
         folder_parts = rel_path.split(os.sep)
-        if len(folder_parts) > 1 and folder_parts[0].lower().startswith('v'):
+        if len(folder_parts) > 1:
             version_label = folder_parts[0]
         else:
-            # Check filename for v1, v2, etc.
             match = re.search(r'(v\d+)', filename, re.IGNORECASE)
             version_label = match.group(1).lower() if match else "v1"
 
-        # Extract date from filename if present (e.g. 2026-10-14)
-        date_match = re.search(r'(\d{4}[-_]\d{2}[-_]\d{2})', filename)
+        # Extract date from filename or folder if present
+        date_match = re.search(r'(\d{4}[-_]\d{2}[-_]\d{2}|\d{2}[-_]\d{2}[-_]\d{4})', filename)
         date_str = date_match.group(1) if date_match else "Historical"
 
         key = f"{version_label.upper()} ({date_str}) - {filename}"

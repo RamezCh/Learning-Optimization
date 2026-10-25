@@ -2,9 +2,9 @@
 analytics/benchmark_3regime_models.py
 ------------------------------------
 Head-to-head evaluation across 3 distinct macroeconomic market regimes:
-- Regime 1: High WTP (Valuations $45-$115, Premium travelers like v1/v4)
-- Regime 2: Medium WTP (Valuations $35-$92, Standard balanced market like v3)
-- Regime 3: Low WTP / Volume Surge (Valuations $25-$78, High volume like v5)
+- Regime 1: Low Demand Market (Arrivals ~68, Valuations $20-$48, e.g. v5.1 / MLR week)
+- Regime 2: Average Demand Market (Arrivals ~95, Valuations $35-$92, Standard balanced market like v3/v4)
+- Regime 3: High Demand Surge (Arrivals ~135, Valuations $25-$78, High volume surge like v5)
 
 Competitors:
 - CopycatCompetitor
@@ -33,21 +33,24 @@ from simulation_engine import (
     MarketDemandModel
 )
 
-class HighWTPMarket(MarketDemandModel):
+class LowDemandMarket(MarketDemandModel):
+    """Severe low-demand shock: ~68 total arrivals, high price elasticity, low WTP."""
     def __init__(self, seed=42):
-        super().__init__(avg_arrivals=90, price_sensitivity=0.04, seed=seed)
+        super().__init__(avg_arrivals=68, arrival_convexity=1.3, price_sensitivity=0.15, seed=seed)
     def sample_customer_wtp(self, n, t):
-        return self.rng.uniform(45.0, 115.0, size=n)
+        return self.rng.uniform(20.0, 48.0, size=n)
 
-class MediumWTPMarket(MarketDemandModel):
+class AverageDemandMarket(MarketDemandModel):
+    """Standard balanced market: ~95 total arrivals, balanced leisure/business mix."""
     def __init__(self, seed=42):
-        super().__init__(avg_arrivals=95, price_sensitivity=0.07, seed=seed)
+        super().__init__(avg_arrivals=95, arrival_convexity=1.8, price_sensitivity=0.07, seed=seed)
     def sample_customer_wtp(self, n, t):
         return self.rng.uniform(35.0, 92.0, size=n)
 
-class LowWTPMarket(MarketDemandModel):
+class HighDemandMarket(MarketDemandModel):
+    """High volume arrival surge: ~135 total arrivals, convex late surge, low WTP cap."""
     def __init__(self, seed=42):
-        super().__init__(avg_arrivals=130, arrival_convexity=2.0, price_sensitivity=0.12, seed=seed)
+        super().__init__(avg_arrivals=135, arrival_convexity=2.0, price_sensitivity=0.11, seed=seed)
     def sample_customer_wtp(self, n, t):
         return self.rng.uniform(25.0, 78.0, size=n)
 
@@ -57,9 +60,9 @@ def run_3regime_benchmark():
     print("="*85)
 
     regimes = {
-        "Regime 1: High WTP ($45-$115)": HighWTPMarket,
-        "Regime 2: Medium WTP ($35-$92)": MediumWTPMarket,
-        "Regime 3: Low WTP Surge ($25-$78)": LowWTPMarket,
+        "Regime 1: Low Demand (~68 arrivals, $20-$48 WTP)": LowDemandMarket,
+        "Regime 2: Average Demand (~95 arrivals, $35-$92 WTP)": AverageDemandMarket,
+        "Regime 3: High Demand Surge (~135 arrivals, $25-$78 WTP)": HighDemandMarket,
     }
 
     algorithms = {

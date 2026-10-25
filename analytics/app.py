@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import os
 import sys
 import subprocess
+import time
 
 # Ensure root and analytics are importable
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -288,7 +289,8 @@ st.markdown(f"""
 # -----------------------------------------------------------------------------
 # WORKSPACE TABS
 # -----------------------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab_playback, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "⏱️ Day-by-Day Simulation",
     "📈 Capacity Pacing",
     "💰 Season Revenue",
     "📉 Daily Trajectories",
@@ -296,6 +298,247 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📋 Raw Data",
     "🧪 Unit Tests"
 ])
+
+# -----------------------------------------------------------------------------
+# TAB 0: Interactive Day-by-Day Simulation & Playback
+# -----------------------------------------------------------------------------
+with tab_playback:
+    st.markdown("### ⏱️ Day-by-Day Simulation & Playback")
+    st.caption("Inspect what happened one day at a time: track price, sales, and capacity for both airlines. Step manually or auto-play with 3–5 second pauses.")
+
+    # State initialization
+    if 'sim_day' not in st.session_state:
+        st.session_state['sim_day'] = 1
+    if 'sim_autoplay' not in st.session_state:
+        st.session_state['sim_autoplay'] = False
+    if 'sim_selected_season' not in st.session_state:
+        st.session_state['sim_selected_season'] = 1
+
+    # Controls Row 1: Season & Auto-Play Settings
+    col_s, col_pause_speed, col_ap_btn = st.columns([2, 1, 1.2])
+    with col_s:
+        chosen_season = st.selectbox(
+            "Select Season",
+            options=list(range(1, n_seasons_to_sim + 1)),
+            index=min(st.session_state['sim_selected_season'] - 1, n_seasons_to_sim - 1),
+            key="season_selector"
+        )
+        if chosen_season != st.session_state['sim_selected_season']:
+            st.session_state['sim_selected_season'] = chosen_season
+            st.session_state['sim_day'] = 1
+
+    with col_pause_speed:
+        pause_sec = st.selectbox(
+            "Auto-Play Pause",
+            options=[3, 4, 5],
+            index=0,
+            format_func=lambda s: f"{s} seconds"
+        )
+
+    with col_ap_btn:
+        st.write("")
+        st.write("")
+        if st.session_state['sim_autoplay']:
+            if st.button("⏸ Pause Auto-Play", type="secondary", use_container_width=True):
+                st.session_state['sim_autoplay'] = False
+                st.rerun()
+        else:
+            if st.button("▶ Start Auto-Play", type="primary", use_container_width=True, disabled=(st.session_state['sim_day'] >= 100)):
+                st.session_state['sim_autoplay'] = True
+                st.rerun()
+
+    # Filter data for chosen season
+    season_data = df_sim[df_sim['season'] == st.session_state['sim_selected_season']].sort_values('period')
+    if len(season_data) == 0:
+        st.warning("No data found for this season.")
+    else:
+        # Navigation Row 2: Step Buttons & Slider
+        col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1, 1, 4, 1])
+        
+        with col_nav1:
+            if st.button("⏮ Day 1", use_container_width=True, disabled=(st.session_state['sim_day'] <= 1)):
+                st.session_state['sim_day'] = 1
+                st.session_state['sim_autoplay'] = False
+                st.rerun()
+
+        with col_nav2:
+            if st.button("◀ Previous", use_container_width=True, disabled=(st.session_state['sim_day'] <= 1)):
+                st.session_state['sim_day'] = max(1, st.session_state['sim_day'] - 1)
+                st.session_state['sim_autoplay'] = False
+                st.rerun()
+
+        with col_nav3:
+            new_day = st.slider(
+                "Current Selling Period / Day",
+                min_value=1,
+                max_value=100,
+                value=st.session_state['sim_day'],
+                key="day_slider"
+            )
+            if new_day != st.session_state['sim_day']:
+                st.session_state['sim_day'] = new_day
+                st.session_state['sim_autoplay'] = False
+                st.rerun()
+
+        with col_nav4:
+            if st.button("Next ▶", use_container_width=True, disabled=(st.session_state['sim_day'] >= 100)):
+                st.session_state['sim_day'] = min(100, st.session_state['sim_day'] + 1)
+                st.session_state['sim_autoplay'] = False
+                st.rerun()
+
+        curr_day = st.session_state['sim_day']
+        day_row = season_data[season_data['period'] == curr_day]
+        
+        if len(day_row) > 0:
+            row = day_row.iloc[0]
+
+            # Compute cumulative stats up to current day
+            hist_up_to_day = season_data[season_data['period'] <= curr_day]
+            our_cum_sales = int(hist_up_to_day['our_sales'].sum())
+            rival_cum_sales = int(hist_up_to_day['rival_sales'].sum())
+            our_cum_rev = float(hist_up_to_day['our_revenue'].sum())
+            rival_cum_rev = float(hist_up_to_day['rival_revenue'].sum())
+
+            diff_p = row['rival_price'] - row['our_price']
+            diff_p_str = f"+${diff_p:.2f} (We are cheaper)" if diff_p > 0 else (f"-${abs(diff_p):.2f} (Rival is cheaper)" if diff_p < 0 else "Equal ($0.00)")
+
+            # Day status pill
+            rival_stock_status = "SOLD OUT (Monopoly Mode)" if row['rival_capacity_remaining'] == 0 else "IN STOCK"
+            rival_tag_color = "#b91c1c" if row['rival_capacity_remaining'] == 0 else "#047857"
+
+            st.markdown(f"""
+            <div style="background: #f1f5f9; border-radius: 8px; padding: 10px 16px; margin: 12px 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #2563eb;">
+                <div>
+                    <span style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: #475569;">Current Timeline:</span>
+                    <strong style="font-size: 16px; color: #0f172a; margin-left: 6px;">Season {st.session_state['sim_selected_season']} · Day {curr_day} of 100</strong>
+                    <span style="margin-left: 12px; font-size: 13px; color: #64748b;">(Progress: {curr_day}% completed)</span>
+                </div>
+                <div>
+                    <span style="font-size: 12px; font-weight: 700; color: #475569;">Rival Inventory:</span>
+                    <span style="font-size: 12px; font-weight: 800; color: {rival_tag_color}; background: #ffffff; padding: 3px 8px; border-radius: 4px; margin-left: 4px; border: 1px solid #cbd5e1;">{rival_stock_status}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 4-KPI comparison cards: Prices & Demands for BOTH users
+            c_our_p, c_our_d, c_riv_p, c_riv_d = st.columns(4)
+            with c_our_p:
+                st.markdown(f"""
+                <div class="kpi-card" style="border-top: 3px solid #059669;">
+                    <div class="kpi-label">My Price (duopoly.py)</div>
+                    <div class="kpi-value" style="color: #059669;">${row['our_price']:.2f}</div>
+                    <div class="kpi-detail">Spread: <strong>{diff_p_str}</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_our_d:
+                st.markdown(f"""
+                <div class="kpi-card" style="border-top: 3px solid #059669;">
+                    <div class="kpi-label">My Demand (Sold Today)</div>
+                    <div class="kpi-value" style="color: #059669;">{int(row['our_sales'])} <span style="font-size: 18px; color: #64748b;">seats</span></div>
+                    <div class="kpi-detail">Today Revenue: <strong>${row['our_revenue']:,.2f}</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_riv_p:
+                st.markdown(f"""
+                <div class="kpi-card" style="border-top: 3px solid #e11d48;">
+                    <div class="kpi-label">Opponent Price ({rival_display_name})</div>
+                    <div class="kpi-value" style="color: #e11d48;">${row['rival_price']:.2f}</div>
+                    <div class="kpi-detail">Status: <strong>{'Active' if row['rival_capacity_remaining'] > 0 else 'Stock Depleted'}</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_riv_d:
+                st.markdown(f"""
+                <div class="kpi-card" style="border-top: 3px solid #e11d48;">
+                    <div class="kpi-label">Opponent Demand (Sold Today)</div>
+                    <div class="kpi-value" style="color: #e11d48;">{int(row['rival_sales'])} <span style="font-size: 18px; color: #64748b;">seats</span></div>
+                    <div class="kpi-detail">Today Revenue: <strong>${row['rival_revenue']:,.2f}</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Cumulative Standing Row
+            st.markdown(f"""
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 18px; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+                <div>
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">My Remaining Capacity:</span>
+                    <div style="font-size: 18px; font-weight: 800; color: #047857;">{int(row['our_capacity_remaining'])} / 80 seats <span style="font-size: 12px; font-weight: 600; color: #64748b;">({our_cum_sales} sold)</span></div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Opponent Remaining Capacity:</span>
+                    <div style="font-size: 18px; font-weight: 800; color: #e11d48;">{int(row['rival_capacity_remaining'])} / 80 seats <span style="font-size: 12px; font-weight: 600; color: #64748b;">({rival_cum_sales} sold)</span></div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">My Cumulative Revenue:</span>
+                    <div style="font-size: 18px; font-weight: 800; color: #047857;">${our_cum_rev:,.2f}</div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Opponent Cumulative Revenue:</span>
+                    <div style="font-size: 18px; font-weight: 800; color: #e11d48;">${rival_cum_rev:,.2f}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Real-time Trajectory Visualizations up to Day t
+            fig_sim, (ax_p, ax_d, ax_c) = plt.subplots(3, 1, figsize=(11, 7.5), sharex=True, dpi=140)
+            style_figure(fig_sim, [ax_p, ax_d, ax_c])
+
+            p_days = hist_up_to_day['period'].values
+            p_our_prices = hist_up_to_day['our_price'].values
+            p_riv_prices = hist_up_to_day['rival_price'].values
+            p_our_sales = hist_up_to_day['our_sales'].values
+            p_riv_sales = hist_up_to_day['rival_sales'].values
+            p_our_caps = hist_up_to_day['our_capacity_remaining'].values
+            p_riv_caps = hist_up_to_day['rival_capacity_remaining'].values
+
+            # 1. Price trajectory
+            ax_p.plot(p_days, p_our_prices, color='#059669', linewidth=2.2, label='My Price (duopoly.py)')
+            ax_p.plot(p_days, p_riv_prices, color='#ef4444', linewidth=1.8, linestyle='--', label=f'Opponent ({rival_display_name})')
+            ax_p.scatter([curr_day], [row['our_price']], color='#059669', s=80, zorder=5, edgecolors='#0f172a', label='Today')
+            ax_p.scatter([curr_day], [row['rival_price']], color='#ef4444', s=80, zorder=5, edgecolors='#0f172a')
+            ax_p.set_xlim(0.5, 100.5)
+            ax_p.set_ylabel('Price ($)', fontsize=9, fontweight='bold')
+            ax_p.set_title(f"Real-Time Trajectory: Season {st.session_state['sim_selected_season']} (Day 1 to {curr_day})", fontsize=11, fontweight='bold')
+            ax_p.legend(loc='upper right', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
+
+            # 2. Demand bars
+            bar_w = 0.38
+            ax_d.bar(p_days - bar_w/2, p_our_sales, width=bar_w, color='#059669', label='My Sales')
+            ax_d.bar(p_days + bar_w/2, p_riv_sales, width=bar_w, color='#ef4444', label='Opponent Sales')
+            ax_d.set_ylabel('Daily Demand', fontsize=9, fontweight='bold')
+            ax_d.legend(loc='upper left', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
+
+            # 3. Capacity curves
+            ax_c.plot(p_days, p_our_caps, color='#059669', linewidth=2.2, label='My Remaining Seats')
+            ax_c.plot(p_days, p_riv_caps, color='#ef4444', linewidth=1.8, linestyle='--', label='Opponent Remaining Seats')
+            tau_all = (np.arange(1, 101) - 1) / 100.0
+            target_rem = 80.0 * (1.0 - (0.85 * tau_all + 0.15 * (tau_all ** 2)))
+            ax_c.plot(np.arange(1, 101), target_rem, color='#2563eb', linestyle='-.', label='Pacing Target Curve')
+            ax_c.set_xlabel('Selling Period / Day', fontsize=9, fontweight='bold')
+            ax_c.set_ylabel('Seats Remaining', fontsize=9, fontweight='bold')
+            ax_c.legend(loc='upper right', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
+
+            plt.tight_layout()
+            st.pyplot(fig_sim)
+            plt.close()
+
+            # Historical day table
+            with st.expander("📋 View Daily Breakdown Table (Up to Today)"):
+                table_df = hist_up_to_day[['period', 'our_price', 'rival_price', 'our_sales', 'rival_sales', 'our_revenue', 'rival_revenue', 'our_capacity_remaining', 'rival_capacity_remaining']].copy()
+                table_df.columns = ['Day', 'My Price ($)', 'Rival Price ($)', 'My Sold', 'Rival Sold', 'My Rev ($)', 'Rival Rev ($)', 'My Left', 'Rival Left']
+                st.dataframe(table_df.sort_values('Day', ascending=False), use_container_width=True, height=240)
+
+            # Auto-play loop handling
+            if st.session_state['sim_autoplay']:
+                if curr_day < 100:
+                    st.info(f"⏳ Auto-Play active: Pausing {pause_sec}s before advancing to Day {curr_day + 1}...")
+                    time.sleep(pause_sec)
+                    st.session_state['sim_day'] = curr_day + 1
+                    st.rerun()
+                else:
+                    st.session_state['sim_autoplay'] = False
+                    st.success("✅ Auto-Play completed! Reached Day 100.")
+                    st.rerun()
+
+# -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # TAB 1: Capacity Utilization Curves with Target Line

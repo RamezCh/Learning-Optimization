@@ -71,6 +71,122 @@ $$p^*(t, c) = \arg\max_{p} \left[ (p - \mu(t, c)) \cdot d(p, t) \right]$$
 
 As remaining capacity $c$ diminishes relative to remaining periods $T - t$, the shadow price $\mu(t, c)$ escalates, justifying higher price thresholds to protect inventory for high-value business travelers arriving late in the season [2].
 
+### 1.5 Target Curve vs. Booking Curve vs. Capacity Utilization Curve
+
+In modern airline revenue management, distinguishing between what is planned, what is realized, and how capacity is utilized is fundamental. The interaction between these concepts forms the central feedback loop of our algorithm:
+
+```
+    Cumulative Sold
+         ▲
+      80 ┼──────────────────────────────────────────────────────────● [Day 100: Sold Out]
+         │                                               . · ' ╱
+         │                                        . · '       ╱  Realized Booking Curve
+         │                                 . · '             ╱   (Empirical Accumulation)
+         │                          . · '                   ╱
+         │                   . · '                         ╱
+         │            . · '                               ╱
+         │     . · '  ───────────────────────────────────'
+         │  ·'        ▲
+       0 ┼────────────┼─────────────────────────────────────────────► Time t (1..100)
+       Day 1       Target Curve: TargetSold(t) = 80*(0.85τ + 0.15τ²)
+                   (Optimal Planned Depletion Benchmark)
+```
+
+#### 1. Concept Comparison Matrix
+
+| Concept | What It Represents | Formula / Definition | Unit | Operational Role in Strategy |
+| :--- | :--- | :--- | :---: | :--- |
+| **Target Curve** | The **planned, optimal benchmark** depletion pace | $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ | Cumulative Seats ($0 \dots 80$) | The ideal schedule designed to maximize total flight revenue by reserving high-yield seats for late surges. |
+| **Booking Curve** | The **realized cumulative bookings** sold up to day $t$ | $\text{RealizedSold}(t) = \sum_{s=1}^{t-1} \text{Demand}(s)$ | Cumulative Seats ($0 \dots 80$) | Measures actual sales traction achieved in the market against passenger arrivals and rival prices. |
+| **Capacity Utilization Curve** | The **actual physical state** of the aircraft inventory | $\text{Utilization}(t) = \frac{\text{RealizedSold}(t)}{80}$ or $c(t) = 80 - \text{RealizedSold}(t)$ | Load Factor (%) or Remaining Seats | Tracks real-time occupancy. Directly determines remaining exposure to seat spoilage or premature stockout. |
+| **Inventory Gap** | The **divergence between actual and planned** inventory | $\text{InventoryGap}(t) = c(t) - \text{TargetRemaining}(t)$ | Seats (Behind $[+]$ / Ahead $[-]$) | The primary feedback control signal that drives the capacity opportunity shadow price $\mu(t, c)$. |
+
+---
+
+#### 2. Deep Dive: Why $\tau^2$ and Why $0.15$ in the Target Curve?
+
+The Target Curve is defined with normalized selling progress $\tau = \frac{t - 1}{99} \in [0, 1]$:
+
+$$\text{TargetSold}(\tau) = 80 \cdot \left(0.85 \tau + 0.15 \tau^2\right)$$
+
+$$\text{TargetRemaining}(\tau) = 80 - \text{TargetSold}(\tau) = 80 \cdot \left[1 - \left(0.85 \tau + 0.15 \tau^2\right)\right]$$
+
+##### A. Mathematical Boundary Conditions
+* **At Day 1 ($t = 1 \implies \tau = 0$):**
+  $$\text{TargetSold}(0) = 80 \cdot (0.85(0) + 0.15(0)^2) = 0 \text{ seats sold} \quad (c_{\text{target}} = 80)$$
+* **At Day 100 ($t = 100 \implies \tau = 1$):**
+  $$\text{TargetSold}(1) = 80 \cdot (0.85(1) + 0.15(1)^2) = 80 \cdot (0.85 + 0.15) = 80 \text{ seats sold} \quad (c_{\text{target}} = 0)$$
+Because the weights sum to unity ($0.85 + 0.15 = 1.00$), the curve guarantees that exactly 100% of capacity is scheduled for liquidation by departure.
+
+##### B. Why Not a Linear Schedule ($80 \cdot \tau$)?
+If an airline followed a naïve linear pace ($0.80$ seats/day):
+* At Day 50 ($\tau \approx 0.5$): Linear pace demands selling $80 \times 0.5 = \mathbf{40 \text{ seats}}$.
+* With $0.85\tau + 0.15\tau^2$: At Day 50 ($\tau = 0.5$):
+  $$\text{TargetSold}(0.5) = 80 \cdot \left(0.85(0.5) + 0.15(0.25)\right) = 80 \cdot (0.425 + 0.0375) = 80 \cdot 0.4625 = \mathbf{37.0 \text{ seats}}$$
+The convex curve **deliberately holds back 3 to 4 extra seats in the first half of the season**. 
+
+##### C. Why $\tau^2$ (Convexity)?
+In aviation microeconomics (and the official DPC customer arrival process [3]), customer arrival intensity $\lambda(t)$ **rises convexly toward departure**:
+- **Early Season (Days 1–40):** Arrival intensity is low ($\lambda \approx 0.3–0.5$ passengers/day). Customers are leisure travelers with high price elasticity who will only buy at low prices.
+- **Late Season (Days 75–100):** Arrival intensity surges ($\lambda \approx 2.0–2.5$ passengers/day). Customers are urgent/business flyers with low price elasticity who will happily pay $\$70–\$100+$.
+The second derivative is strictly positive:
+$$\frac{\mathrm{d}^2 \text{TargetSold}}{\mathrm{d}\tau^2} = 80 \cdot 2 \cdot 0.15 = 24 > 0$$
+This positive acceleration matches the natural acceleration of passenger arrivals!
+
+##### D. Why $0.15$?
+The coefficient **$0.15$** represents the optimal trade-off calibrated on empirical tournament data:
+* **85% Linear Base ($0.85\tau$):** Ensures steady cash flow and prevents inventory hoarding (which would risk catastrophic late spoilage if demand falters).
+* **15% Quadratic Boost ($0.15\tau^2$):** Protects $\sim 12$ high-value seats ($80 \times 0.15 = 12$) exclusively for the high-paying late-season rush.
+* *Sensitivity Analysis:* If the coefficient were $0.40\tau^2$, too much inventory would be backloaded, risking empty seats if the late surge is weak. If the coefficient were $0.00\tau^2$ (flat), early bargain hunters would consume all capacity at \$35, leaving zero seats when business travelers arrive willing to pay \$90.
+
+---
+
+#### 3. How the Strategy Uses the Inventory Gap (Worked Examples)
+
+The real-time divergence between realized remaining capacity $c(t)$ and planned target remaining capacity $\text{TargetRemaining}(t)$ defines the **Inventory Gap**:
+
+$$\text{InventoryGap}(t) = c(t) - \text{TargetRemaining}(t) = \text{TargetSold}(t) - \text{RealizedSold}(t)$$
+
+This gap directly adjusts the capacity opportunity shadow price $\mu(t, c)$:
+
+$$\mu(t, c) = \operatorname{clip}\left(\text{base\_}\mu - 14.0 \cdot (\text{burn\_rate} - 0.80) - 2.0 \cdot \text{InventoryGap}(t), \; \mu_{\min}, \; \mu_{\max}\right)$$
+
+which then determines the closed-form optimal price:
+
+$$p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$$
+
+##### Worked Example 1: Behind Pace (Low Utilization / Excess Unsold Seats)
+* **Situation at Day 50 ($t = 50, \tau \approx 0.50$):**
+  - Planned Target: $\text{TargetSold} = 37 \implies \text{TargetRemaining} = 43 \text{ seats}$.
+  - Realized Sales: Airline has only sold $32 \text{ seats} \implies \text{Actual Remaining } c = 48 \text{ seats}$.
+  - Capacity Utilization: $\frac{32}{80} = 40.0\%$ (vs. planned $46.25\%$).
+* **Computing the Gap:**
+  $$\text{InventoryGap} = 48 - 43 = \mathbf{+5.0 \text{ seats behind pace}}$$
+* **Pricing Reaction:**
+  - The $+5.0$ seat lag reduces the shadow price $\mu$:
+    $$\Delta \mu = -2.0 \cdot (+5.0) = -\$10.00$$
+  - Shadow price drops from e.g. $\$24.00$ down to $\$14.00$.
+  - In the closed-form quadratic pricing equation ($B \approx -0.015$):
+    $$\Delta p^* = \frac{-B \cdot \Delta \mu}{2(-B)} = \frac{\Delta \mu}{2} \approx -\$5.00$$
+  - The algorithm smoothly reduces ticket price by $\approx \$5.00$ (e.g. from $\$48.00$ to $\$43.00$).
+  - **Outcome:** Lower price stimulates passenger demand, conversions accelerate, and sales catch up to the Target Curve.
+
+##### Worked Example 2: Ahead of Pace (High Utilization / Inventory Scarcity)
+* **Situation at Day 65 ($t = 65, \tau \approx 0.65$):**
+  - Planned Target: $\text{TargetSold} \approx 51 \implies \text{TargetRemaining} = 29 \text{ seats}$.
+  - Realized Sales: Airline has sold $58 \text{ seats} \implies \text{Actual Remaining } c = 22 \text{ seats}$.
+  - Capacity Utilization: $\frac{58}{80} = 72.5\%$ (vs. planned $63.8\%$).
+* **Computing the Gap:**
+  $$\text{InventoryGap} = 22 - 29 = \mathbf{-7.0 \text{ seats ahead of pace (scarce)}}$$
+* **Pricing Reaction:**
+  - The negative gap escalates the shadow price $\mu$:
+    $$\Delta \mu = -2.0 \cdot (-7.0) = +\$14.00$$
+  - Shadow price escalates toward $\$38.00$.
+  - In the closed-form quadratic equation:
+    $$\Delta p^* \approx \frac{+\$14.00}{2} = +\$7.00$$
+  - The algorithm raises ticket price by $+\$7.00$ (e.g. from $\$45.00$ to $\$52.00$).
+  - **Outcome:** Higher ticket price slows down the burn rate and extracts maximum revenue per seat from the remaining inventory.
+
 ---
 
 ## 2. DPC Game Rules & Simulation Mechanics
@@ -243,78 +359,79 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 ---
 
-## 4. Our Strategic Pricing Architecture (`duopoly.py` — v5.1)
+## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.0 Unified Econometric Engine)
 
 > [!IMPORTANT]
-> For a complete empirical post-mortem of our `v1.0`, `v2.0`, `v3.0`, `v4`, `v5.0`, and `v5.1` tournament results (including root-cause diagnosis of the `35zapi` \$0 blowout, `3kGhWc` 40% seat spoilage, the `3d8tDh` dumper deadlock from Round 4, and the low-WTP monopoly blowout from Round 5), see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
+> For a complete empirical post-mortem of our `v1.0`, `v2.0`, `v3.0`, `v4`, `v5.0`, `v5.1`, and `v6.0` tournament results (including root-cause diagnosis of the low-demand macroeconomic shock in `data/mlr`, `data/v5.1`, and `data/poisson_logit`), see [`ALGORITHM_CHANGES.md`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/ALGORITHM_CHANGES.md).
 
-Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v5.1) implements a **Multi-Tier Archetype Profiling, Continuous Pacing, Dynamic WTP Ceiling Detection & Empirical Counter-Pricing Framework** designed around empirical findings from 230,000 real tournament periods.
+Our algorithm in [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v6.0) unifies **Closed-Form Multiple Linear Regression (MLR)** with **3 Macroeconomic Demand Regimes** and **Essential Economic Safeguards**. It eliminates fragile heuristic step-ladders and undercutting tables in favor of first-principles marginal revenue optimization.
 
 ```mermaid
 flowchart TD
-    Start["New Period t (1..100)"] --> StockCheck{"Rival Has Stock?"}
+    Start["New Period t (1..100)"] --> LowDemandCheck{"Fast Low-Demand Triggered?<br/>1. Day 10 zero sales at $48-$55?<br/>2. Rival higher but 0 sales for 4d?<br/>3. Season 1 sales < 42 seats?"}
     
-    StockCheck -- "NO (Monopoly)" --> WTPCheck{"detected_low_wtp == True?"}
-    WTPCheck -- "YES (Low-WTP Market)" --> LowWTPMonopoly["Calibrated Low-WTP Engine<br/>BurnRate ≤ 0.40 → $64.00<br/>BurnRate ≤ 0.70 → $60.00<br/>BurnRate ≤ 1.05 → $56.00<br/>BurnRate > 1.05 → $46.00 - $52.00"]
-    WTPCheck -- "NO (Standard Market)" --> MonopolyEngine["Standard Monopoly Engine<br/>BurnRate ≤ 0.35 → $92.00<br/>BurnRate ≤ 0.85 → $78.00 - $84.00<br/>BurnRate ≤ 1.25 → $72.00<br/>BurnRate > 1.25 → $48.00 - $60.00"]
+    LowDemandCheck -- "YES" --> LockLow["Lock Regime: 'low_demand'<br/>b0=0.2145, bp=-0.0028, b_diff=0.0054<br/>Sweet Spot: $22–$30 | Dynamic Floor: $18.00"]
+    LowDemandCheck -- "NO" --> PriorRegime["Apply Inter-Season Regime Prior<br/>'average_demand' or 'high_demand'"]
     
-    StockCheck -- "YES (Duopoly)" --> CBCheck{"consecutive_low_sales ≥ 2?"}
+    LockLow --> ShadowCost["Calculate Capacity Opportunity Cost mu(t, c):<br/>mu(t, c) = clip(base_mu - 14*burn - 2.0*gap, min_mu, max_mu)<br/>Driven by Target Curve vs Realized Booking Curve"]
+    PriorRegime --> ShadowCost
     
-    CBCheck -- "YES (Universal Circuit Breaker)" --> ContestMarket["Contest Market Share<br/>p = min(hist_med, ema) - $0.50<br/>Guarantees Capacity Clearance"]
+    ShadowCost --> MLROpt["Closed-Form Quadratic Optimization:<br/>p* = (A - B * mu) / (2 * (-B))"]
     
-    CBCheck -- "NO" --> ArchetypeCheck{"Rival Archetype"}
+    MLROpt --> RivalGuard{"Rival Pricing High (p_riv ≥ $58)<br/>in Low-Demand Route?"}
+    RivalGuard -- "YES" --> DynamicCeiling["Dynamic Ceiling Guard:<br/>p* = clip(46.0 - 1.5*gap, $26.00, $48.00)<br/>Prevents getting dragged into zero-demand trap!"]
+    RivalGuard -- "NO" --> TerminalCheck{"t ≥ 90 & rem_cap ≥ 2?"}
     
-    ArchetypeCheck -- "Deep Dumper (p ≤ $20)" --> DumperCircuit{"Failed Holdouts ≥ 2?"}
-    DumperCircuit -- "YES" --> ContestDumper["Contest Volume<br/>Anchor $34-$38<br/>Undercut to $28-$34"]
-    DumperCircuit -- "NO" --> HoldoutRule["Hold $58 Duopoly<br/>Sweep $54-$64 Monopoly"]
-    
-    ArchetypeCheck -- "High Pricer (p ≥ $62)" --> CeilingRule["High-Price Ceiling Guard<br/>Cap duopoly price at $52-$54<br/>Capture 100% Budget/Leisure"]
-    
-    ArchetypeCheck -- "Balanced / Standard" --> PacingRule["Smooth Dynamic Pacing & Counter<br/>Gap > 1.5: Undercut -$0.80 to -$7.50<br/>On-Pace: -$0.80 (Holds ~$49.50 Ticket)<br/>t ≥ 75 & Rival ≥ $54: Hold $52–$54"]
+    DynamicCeiling --> TerminalCheck
+    TerminalCheck -- "YES" --> ClearPlane["Terminal Clearance Override:<br/>Discount toward floor to guarantee 0 spoilage"]
+    TerminalCheck -- "NO" --> ClipBounds["Clip to Empirical Viability Bounds:<br/>clip(p*, floor, $98.00)"]
+    ClearPlane --> ClipBounds --> FinalPrice["Post Optimal Ticket Price p*"]
 ```
 
 | Core Pillar | Operational Mechanism | Target Range / Formula | Economic & Empirical Objective |
 | :--- | :--- | :--- | :--- |
-| **1. Continuous Dynamic Pacing** | Convex target depletion trajectory across all 100 periods | $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ | Prevent early inventory hoarding when market arrivals cannot exhaust combined capacity (160). |
-| **2. Multi-Tier Archetype Profiling** | 5-way rival classification with intra-season EMA ($\alpha = 0.25$) and clean cross-season medians (excluding 999.0 markers) | `'deep_dumper'` (≤ \$20), `'dumper'` (\$20–\$38), `'aggressive'` (\$38–\$58), `'balanced'` (\$58–\$78), `'high'` (> \$78) | Differentiate irrational dumpers from high pricers and balanced competitors from Period 1. |
-| **3. Universal Low-Sales Circuit Breaker** | Cross-season failure alarm for chronic low sales (< 42 seats) | `p = min(hist_med, rival_ema) - 0.5` | Cures the \$95k `3d8tDh` deadlock: if holdout yields low sales 2 seasons in a row, actively undercuts rival to guarantee clearance. |
-| **4. Smooth Dynamic Pacing Undercutting** | Smooth linear undercut curve for behind-pace situations | `undercut = min(7.5, 0.8 + 0.28 * (gap - 1.5))` | Avoids premature \$45 price collapse in high-demand balanced markets, preserving **\$49.50–\$50.00 ticket yield**. |
-| **5. Adaptive Monopoly & Dynamic WTP Ceiling** | Automatically detects markets with zero conversions at $p \ge \$70$ (e.g. `data/v5`) | Low-WTP: **\$64 / \$60 / \$56 / \$52**; Standard: **\$92 / \$84 / \$78 / \$72** | Cures the 201-seat monopoly loss in `3UmBuN` by liquidating inventory at the empirical sweet spot rather than pricing out buyers. |
-| **6. Late-Season High-Rival Counter-Pricing** | Exploits competitors that hike prices late in season (e.g. `ConvivialCrane` at $t \ge 85$) | $t \ge 75$ & rival $\ge \$54$: cap at **$\min(\$54.00, \text{RivalEMA} - 2.0)$** | Eliminates unnecessary clearance discounting down to \$32 when high margins can be captured against high rivals. |
-| **7. Unconditional Late Clearance** | Clearance discount runway starting at Period 75 and unconditional at $t \ge 90$ | `urgency = (t - 74) / 26`, bounded **\$25.00–\$100.00** | Liquidates all remaining seats before departure, ensuring zero seat spoilage at period 100. |
+| **1. Closed-Form MLR Optimization** | Solves the exact global revenue-maximizing price summit in a single step | $p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$ | Replaces discrete step-ladders with continuous mathematical optimization of expected passenger revenue. |
+| **2. 3 Macroeconomic Demand Regimes** | Pre-calibrated regression priors across 377,570 active periods | `low_demand` (\$22–\$30), `average_demand` (\$32–\$44), `high_demand` (\$44–\$52) | Adapts to drastic macroeconomic swings in passenger arrival density and price sensitivity. |
+| **3. Fast In-Season Low-Demand Latch** | Instant detection of demand drought within the first 10 days | Day 10 zero sales at \$48–\$55; undercut rival $\le \$55$ with 0 sales for 4+ days | Diagnoses low-demand routes immediately in Season 1, avoiding prolonged periods of zero sales. |
+| **4. Dynamic Capacity Opportunity Cost ($\mu$)** | Real-time valuation of remaining seats driven by Target Curve gap | $\mu(t, c) = \operatorname{clip}(24.0 - 14.0(\text{burn} - 0.80) - 2.0 \cdot \text{gap}, \; \mu_{\min}, \; 48.0)$ | Escalates price when capacity is scarce; discounts when capacity is surplus to ensure full clearance. |
+| **5. High-Rival Dynamic Ceiling Guard** | Caps asking price when rival prices high in low-demand routes | $p_{\text{riv}} \ge \$58 \implies p^* \le \operatorname{clip}(46.0 - 1.5 \cdot \text{gap}, \; 26.0, \; 48.0)$ | Prevents the algorithm from following overpriced rivals into the dead zone; generated **+3,289% revenue** vs \$72 rivals. |
+| **6. Dynamic Operating Floor** | Unlocks dynamic discounting down to \$18.00 in low-demand routes | \$18.00 (low demand) vs \$25.00 (standard) | Prevents lockout against aggressive dumpers in low-WTP markets while maintaining profitable margins. |
+| **7. Terminal Clearance Safety Valve** | Unconditional liquidation runway at $t \ge 90$ if remaining seats $\ge 2$ | Smooth ramp toward floor at departure | Guarantees zero seat spoilage at Day 100 departure. |
 
-### 4.1 Continuous Inventory Pacing Curve (Periods 1–100)
+### 4.1 The 3 Macroeconomic Demand Regimes (377,570 Empirical Periods)
 
-* **Empirical Motivation:** Because total market arrivals across 100 periods vary substantially across rounds while combined capacity is 160 seats, pacing inventory continuously avoids both early ticket giveaways and terminal seat spoilage.
-* **Execution:** At every period $t \in [1, 100]$, with normalized progress $\tau = \frac{t - 1}{100}$, we compute target cumulative sales and the real-time **Inventory Gap**:
-  $$\text{TargetRemaining}(t) = 80 \times \left[1 - \left(0.85\tau + 0.15\tau^2\right)\right]$$
-  $$\text{InventoryGap}(t) = \text{RemainingCapacity}(t) - \text{TargetRemaining}(t)$$
-  * $\text{InventoryGap}(t) > 1.5$: **Behind schedule** $\to$ smoothly undercut competitor anchor by $\min(7.50,\; 0.80 + 0.28 \times (\text{Gap} - 1.5))$.
-  * $\text{InventoryGap}(t) < -2.5$: **Ahead of schedule** $\to$ add a scarcity premium above anchor (+\$1.00–\$14.00).
+Analysis of all 13 tournament datasets spanning 377,570 active periods revealed three distinct macroeconomic demand worlds:
 
-### 4.2 Multi-Tier Archetype Profiling & Counter-Pricing (Duopoly Mode)
+| Metric / Parameter | Low Demand Regime (`mlr`, `v5.1`, `poisson`) | Average Demand Regime (`v3`, `v4`) | High Demand Regime (`v1`) |
+| :--- | :---: | :---: | :---: |
+| **Baseline Arrival Rate ($\beta_0$)** | **0.2145** (Severe demand drought) | **0.9696** (Standard commercial route) | **2.2329** (Holiday rush / high density) |
+| **Own-Price Sensitivity ($\beta_p$)** | **-0.0028** | **-0.0093** | **-0.0258** |
+| **Undercutting Sensitivity ($\beta_{\text{diff}}$)** | **+0.0054** | **+0.0079** | **+0.0128** |
+| **Late Surge Velocity ($\beta_t$)** | **+0.2931** (Flatter late surge) | **+0.3998** (Moderate acceleration) | **+0.8327** (Violent late rush) |
+| **Empirical Sweet-Spot Price** | **\$22.00 – \$30.00** | **\$32.00 – \$44.00** | **\$44.00 – \$52.00** |
+| **Dynamic Floor** | **\$18.00** | **\$25.00** | **\$28.00** |
 
-1. **The Deep Dumper Bypass & Circuit Breaker:** When facing a `'deep_dumper'`, our algorithm holds **\$58.00** during duopoly. Because the rival sells at \$18.40, budget customers purchase from them, capping the rival's season revenue at $80 \text{ seats} \times 18.40 = \$1,472$. If the rival sells out late and remaining arrivals do not convert (e.g. `35zapi`), the circuit breaker activates in subsequent seasons, lowering monopoly to \$54 and duopoly to \$32–\$36 to ensure steady sales.
-2. **High-Pricer Ceiling Guard:** When facing high-priced rivals (rival price $\ge \$62$, e.g. `LoutishMacaque`), the algorithm refuses to quote in the dead zone above \$56. Capping at **\$52.00–\$54.00** captures all Budget and Leisure travelers, generating **\$380k+** revenue and 97%+ load factor.
-3. **Smooth Balanced Undercutting:** Against balanced competitors ($\sim \$50.50$), holding a moderate $-\$0.80$ to $-\$1.20$ undercut maintains high ticket revenues ($\$49.50–\$50.00$) while securing preferred passenger choice.
-4. **Late High-Rival Exploitation:** When rivals hike prices late ($t \ge 85$), rather than panic discounting, holding $\$52–\$54$ extracts high margins from late inelastic travelers.
+### 4.2 Fast In-Season Low-Demand Detection Logic
 
-### 4.3 Adaptive Empirical Monopoly Engine (`competitor_has_capacity == False`)
+In low-demand markets (such as `WB9uo7` and `Vz6D2S`), waiting for an entire season to complete before lowering prices results in catastrophic losses. The v6.0 engine deploys three fast detection mechanisms:
+1. **Day 10 Zero-Sales Latch:** If $t = 10$, total units sold is 0, and our average quoted price was $\$48.00–\$55.00$, the market is diagnosed as low demand immediately.
+2. **Cheaper-Than-Rival Stagnation:** If our price is at or below $\$55.00$, we are cheaper than the rival, and 0 seats have sold over 4 consecutive days, the market lacks standard WTP and latches to `low_demand`.
+3. **Cross-Season Fallback:** If Season 1 concludes with total sales $< 42$ seats, the low-demand regime is permanently latched for all subsequent seasons.
 
-* **Empirical Motivation:** Analysis of 230,000 competition periods revealed that customer valuation profiles differ dramatically: while some markets support $\$85–\$95$ business travelers, others (`data/v5`) have an absolute reservation price ceiling at **$\$78.00$** where prices $\ge \$80.00$ yield a **$100\%$ zero-conversion rate**.
-* **Execution:** If high prices ($p \ge \$70$) show zero conversion, the engine activates the **Low-WTP Calibrated Sweet-Spot Curve**:
-  * $\text{BurnRate} \le 0.40$ seats/day: **\$64.00**
-  * $0.40 < \text{BurnRate} \le 0.70$ seats/day: **\$60.00**
-  * $0.70 < \text{BurnRate} \le 1.05$ seats/day: **\$56.00**
-  * $\text{BurnRate} > 1.05$ seats/day: Smooth clearance discount toward **\$46.00** to guarantee 100% capacity liquidation before departure.
+### 4.3 High-Rival Dynamic Ceiling Guard
 
-### 4.4 Strategy Visualizations & Empirical Segments
+When an opponent quotes high prices ($p_{\text{riv}} \ge \$58.00$) in a low-demand route, naive regression models attempt to quote $\$55–\$65$ because the price difference remains favorable. However, because customer reservation prices in these markets cap at $\$35–\$45$, quoting above $\$50$ yields zero conversions.
+The dynamic ceiling guard caps the price:
+$$p^* \le \operatorname{clip}(46.0 - 1.5 \cdot \text{InventoryGap}, \; 26.0, \; 48.0)$$
+This captures 100% of available market demand while the opponent starves, yielding **\$136k vs \$4k (+3,289% revenue)** in empirical benchmarks.
+
+### 4.4 Strategy Visualizations & Empirical Regimes
 
 ![DPC Dynamic Pricing Strategy and Empirical WTP Segments](imgs/dpc_strategy_visualization.png)
 
-* **Panel 1 (Dynamic Pricing Lifecycle):** Illustrates the dual-regime monopoly branch (Standard vs. Low-WTP Sweet Spot), smooth duopoly pacing undercutting, and the late-season surge counter.
-* **Panel 2 (Inventory Pacing & Control Zones):** Displays the convex target depletion trajectory, behind-pace smooth undercutting corridor, on-pace corridor, and terminal clearance zone.
-* **Panel 3 (Empirical WTP Segments across 230,000 Periods):** Shows the aggregate breakdown across rounds: Budget ($87.5\%$ volume), Leisure ($11.2\%$ volume), and Business ($1.3\%$ volume) alongside empirical yields.
+* **Panel 1 (Dynamic Pricing Lifecycle):** Illustrates the closed-form MLR price trajectory responding to high rivals, fast low-demand detection at Day 10, continuous pacing, and terminal clearance.
+* **Panel 2 (Target Curve vs Booking Curve & Capacity Pacing):** Contrasts the planned convex Target Curve against the realized Booking Curve and shows how the Capacity Utilization Gap drives the opportunity shadow cost $\mu(t, c)$.
+* **Panel 3 (Empirical 3 Macroeconomic Regimes across 377k Periods):** Visualizes baseline arrival rates ($\beta_0$) and optimal sweet-spot pricing bands across Low Demand, Average Demand, and High Demand markets.
 
 
 ---
@@ -344,6 +461,26 @@ Before submitting [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT
 4. Inspect cloud test run results and error logs generated after ~15 minutes.
 5. Review daily leaderboard rankings and download the detailed simulation CSV log.
 
+### 5.3 Interactive Streamlit Analytics & Day-by-Day Simulation Studio
+
+We provide an interactive analytical cockpit built in Streamlit to explore competition results, audit competitor behavior, and inspect daily decisions:
+
+```bash
+streamlit run analytics/app.py
+```
+
+#### Key Capabilities:
+1. **Interactive Cross-Competition Leaderboard:** Ranks performance across all 7 dataset editions (`v1`, `v3`, `v4`, `v5`, `v5.1`, `mlr`, `poisson_logit`) with revenue, win rate, load factor, and seat spoilage metrics.
+2. **Day-by-Day Simulation & Playback Studio:**
+   - Step through any historical match day-by-day (Periods 1 to 100) or watch auto-play with 3, 4, or 5-second pauses.
+   - Real-time visualization of:
+     - Our price vs. rival's price.
+     - Units sold by both players in each individual period.
+     - Cumulative capacity depletion against the convex Target Curve.
+     - Current selling season and macroeconomic regime diagnosis.
+3. **Capacity Utilization & Pacing Diagnostics:** Charts empirical capacity utilization against the theoretical Target Curve across all seasons.
+4. **WTP Distribution & Elasticity Profiler:** Analyzes conversion rates across price bands to diagnose market reservation ceilings.
+
 ---
 
 ## 6. Glossary of Business, Microeconomic & Technical Terms
@@ -367,12 +504,16 @@ Below is an executive glossary defining key economic, revenue management, and co
 | Term | Plain-Language Definition | Practical Meaning in the Competition |
 | :--- | :--- | :--- |
 | **Dynamic Pricing** | The practice of adjusting prices in real time based on demand fluctuations, remaining time, and inventory levels. | Instead of charging one static fare, our algorithm continuously sets optimal prices for all 100 booking periods. |
+| **Target Curve** | The optimal benchmark depletion trajectory $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ over time. | The ideal pace at which seats should sell to maximize revenue, holding back 15–20% of capacity for late high-yield business travelers. |
+| **Booking Curve** | The actual observed accumulation of ticket sales across the 100-day selling window. | Represents real customer conversion; compared continuously against the Target Curve to identify whether we are ahead or behind pace. |
+| **Capacity Utilization Curve** | The realized percentage of total aircraft capacity sold over time ($\text{Sold}(t) / 80$). | Measures load factor; remaining capacity $c(t) = 80 - \text{Sold}(t)$ determines vulnerability to seat spoilage or stockout. |
+| **Inventory Gap** | The difference between actual remaining capacity and target remaining capacity ($\text{Gap} = c(t) - \text{TargetRemaining}(t)$). | Positive gap means behind pace (prompts lower price to stimulate sales); negative gap means ahead of pace (prompts scarcity premium). |
 | **Perishable Inventory** | Goods or services that expire and become completely worthless after a fixed date or event. | Airline seats are strictly perishable: once the aircraft takes off, an unsold seat has zero utility and cannot be recovered. |
-| **Seat Spoilage** | Leaving seats empty and unsold when the flight departs at period 100. | Spoilage is wasted potential revenue; our Phase 4 Safety Valve actively prevents this by discounting prices if seats remain late. |
+| **Seat Spoilage** | Leaving seats empty and unsold when the flight departs at period 100. | Spoilage is wasted potential revenue; our Terminal Safety Valve actively prevents this by discounting prices if seats remain late. |
 | **Salvage Value** | The residual value of unsold stock after the sales period concludes. | In airline booking, salvage value is exactly \$0. Unsold inventory cannot be discounted or sold after departure. |
-| **Opportunity Cost / Shadow Price ($\mu$)** | The hidden economic cost of selling a seat today instead of reserving it for a potentially higher-paying buyer tomorrow. | Selling a seat early for \$85 carries an opportunity cost if a business traveler would have paid \$145 in period 90. |
+| **Opportunity Cost / Shadow Price ($\mu$)** | The hidden economic cost of selling a seat today instead of reserving it for a potentially higher-paying buyer tomorrow. | Selling a seat early for \$35 carries an opportunity cost if a business traveler would have paid \$65 in period 90. |
 | **Poisson Arrival Process ($\lambda$)** | A standard statistical model describing how random events (customer arrivals) occur over time at an average rate $\lambda$. | Models passenger booking traffic, which starts as a slow trickle early on and escalates sharply in days 80–100. |
-| **Burn Rate** | The pace at which remaining seats must sell each day to completely sell out before departure. | Calculated as Remaining Capacity divided by Days Left. A burn rate above 1.5 indicates seats are selling too slowly. |
+| **Burn Rate** | The pace at which remaining seats must sell each day to completely sell out before departure. | Calculated as Remaining Capacity divided by Days Left. A burn rate above 1.2 indicates seats are selling too slowly. |
 | **Safety Pacing Valve** | An automated algorithmic override that lowers prices if inventory is selling slower than the target trajectory. | Ensures inventory clears before period 100 without initiating an unnecessary price war earlier in the season. |
 
 ### 6.3 Duopoly Game & Technical Architecture

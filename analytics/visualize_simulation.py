@@ -45,11 +45,15 @@ def generate_visualizations():
         "Bounded ($40-$70)": BoundedCompetitor()
     }
 
-    csv_path = 'data/day2_duopoly_competition_details.csv'
-    if not os.path.exists(csv_path):
-        csv_path = '../data/day2_duopoly_competition_details.csv'
+    csv_candidates = [
+        'data/day2_duopoly_competition_details.csv',
+        'data/v1/2026-10-14_day2_duopoly_competition_details.csv',
+        '../data/v1/2026-10-14_day2_duopoly_competition_details.csv',
+        '../data/day2_duopoly_competition_details.csv'
+    ]
+    csv_path = next((p for p in csv_candidates if os.path.exists(p)), None)
 
-    if os.path.exists(csv_path):
+    if csv_path and os.path.exists(csv_path):
         df_csv = pd.read_csv(csv_path)
         scenarios["ZealousMosquito (Hist)"] = HistoricalCSVCompetitor(df_csv, "3XkNYY")
         scenarios["UncoveredElephant (Hist)"] = HistoricalCSVCompetitor(df_csv, "3PTJwD")

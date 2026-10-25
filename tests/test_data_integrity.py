@@ -30,8 +30,9 @@ def dataset_df():
     """Loads the primary v1 competition dataset."""
     datasets = discover_datasets()
     assert len(datasets) > 0, "No competition datasets discovered in data/."
-    first_path = list(datasets.values())[0]['path']
-    df = load_competition_file(first_path)
+    v1_matches = [d['path'] for d in datasets.values() if d['version'] == 'v1']
+    target_path = v1_matches[0] if v1_matches else list(datasets.values())[0]['path']
+    df = load_competition_file(target_path)
     return df
 
 
