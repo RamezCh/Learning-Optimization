@@ -1,5 +1,4 @@
 data/
-generate_historical_visuals.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

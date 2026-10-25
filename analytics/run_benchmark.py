@@ -1,21 +1,26 @@
 """
 run_benchmark.py
 ----------------
-Fast automated benchmark suite for testing duopoly.py.
+Automated benchmark and visualization suite for testing duopoly.py (v6.0 Unified).
 Runs full 100-season simulations against:
 1. Copycat Competitor (mirrors our price)
-2. Historical FuturisticSalamander (from CSV)
-3. Historical UncoveredElephant (from CSV)
-4. Historical ZealousMosquito (from CSV)
-5. Our Old v1.0 Baseline Algorithm (head-to-head)
-6. Aggressive Undercutter ($18-$38)
+2. Old v1.0 Baseline Algorithm (head-to-head)
+3. Aggressive Undercutter ($18-$38)
+4. Bounded Mid-Market ($40-$70)
+5. Historical ZealousMosquito (from CSV)
+6. Historical UncoveredElephant (from CSV)
+
+Outputs:
+- CLI Executive Scorecard
+- Publication-quality comparison chart: `imgs/algorithm_variant_comparison.png`
 """
 
 import sys
 import os
 import pandas as pd
 import numpy as np
-from typing import Optional
+import matplotlib.pyplot as plt
+from typing import Optional, List, Dict, Any
 
 # Ensure parent and analytics directory are on path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -33,19 +38,91 @@ from simulation_engine import (
 )
 from data_loader import discover_datasets, load_competition_file
 
-def run_all_benchmarks(csv_path: Optional[str] = None):
+def save_comparison_chart(results: List[Dict[str, Any]], chart_path: str = 'imgs/algorithm_variant_comparison.png'):
+    """Generates a high-resolution bar chart comparing revenue and win rates across scenarios."""
+    os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+    df = pd.DataFrame(results)
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6.5), dpi=200)
+    fig.patch.set_facecolor('#ffffff')
+
+    scenarios = df['competitor'].tolist()
+    x = np.arange(len(scenarios))
+    width = 0.38
+
+    # -------------------------------------------------------------
+    # Panel 1: Revenue Comparison (Our Revenue vs Rival Revenue)
+    # -------------------------------------------------------------
+    ax1 = axes[0]
+    ax1.set_facecolor('#f8fafc')
+    ax1.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
+
+    our_rev = (df['our_total_revenue'] / 1000.0).values
+    rival_rev = (df['rival_total_revenue'] / 1000.0).values
+
+    b1 = ax1.bar(x - width/2, our_rev, width, label='duopoly.py (v6.0 Unified)', color='#10b981', edgecolor='#047857')
+    b2 = ax1.bar(x + width/2, rival_rev, width, label='Opponent Total Revenue', color='#94a3b8', edgecolor='#475569')
+
+    ax1.set_title('Panel 1: Total Revenue ($k) Across 100 Seasons per Scenario', fontsize=12, fontweight='bold', pad=12)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(scenarios, rotation=20, ha='right', fontsize=9)
+    ax1.set_ylabel('Total Revenue ($k)', fontsize=11, fontweight='bold')
+    ax1.legend(loc='upper left', frameon=True)
+
+    for bar in b1:
+        h = bar.get_height()
+        ax1.annotate(f'${h:.1f}k', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#047857')
+    for bar in b2:
+        h = bar.get_height()
+        ax1.annotate(f'${h:.1f}k', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#475569')
+
+    # -------------------------------------------------------------
+    # Panel 2: Season Win Rate (%)
+    # -------------------------------------------------------------
+    ax2 = axes[1]
+    ax2.set_facecolor('#f8fafc')
+    ax2.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
+
+    win_rates = df['season_win_rate_pct'].values
+    load_factors = df['our_load_factor_pct'].values
+
+    bw1 = ax2.bar(x - width/2, win_rates, width, label='Season Win Rate (%)', color='#3b82f6', edgecolor='#1d4ed8')
+    bw2 = ax2.bar(x + width/2, load_factors, width, label='Our Load Factor (%)', color='#818cf8', edgecolor='#4338ca')
+
+    ax2.set_title('Panel 2: Season Win Rate & Load Factor (%) Across 100 Seasons', fontsize=12, fontweight='bold', pad=12)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(scenarios, rotation=20, ha='right', fontsize=9)
+    ax2.set_ylabel('Percentage (%)', fontsize=11, fontweight='bold')
+    ax2.set_ylim(0, 115)
+    ax2.legend(loc='upper right', frameon=True)
+
+    for bar in bw1:
+        h = bar.get_height()
+        ax2.annotate(f'{h:.0f}%', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#1d4ed8')
+    for bar in bw2:
+        h = bar.get_height()
+        ax2.annotate(f'{h:.0f}%', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#3730a3')
+
+    plt.tight_layout()
+    plt.savefig(chart_path, bbox_inches='tight')
+    plt.close()
+    print(f"\n[Visual] Saved benchmark comparison chart to: {chart_path}")
+
+def run_all_benchmarks(csv_path: Optional[str] = None, generate_chart: bool = True):
     print("\n" + "="*80)
-    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py")
+    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py (v6.0 UNIFIED)")
     print("="*80)
 
-    # Automatically discover CSV if not explicitly passed
-    if csv_path is None or not os.path.exists(csv_path):
-        datasets = discover_datasets()
-        if datasets:
-            csv_path = list(datasets.values())[0]['path']
-            print(f"Auto-detected dataset: {csv_path}")
+    # 1. Target v1 dataset specifically for historical match replay
+    v1_csv = 'data/v1/2026-10-14_day2_duopoly_competition_details.csv'
+    if not os.path.exists(v1_csv) and csv_path and os.path.exists(csv_path):
+        v1_csv = csv_path
 
-    # 1. Initialize Simulator
+    # Initialize Simulator
     market = MarketDemandModel(seed=42)
     simulator = DuopolySimulator(algorithm_func=duopoly.p, market_demand=market)
 
@@ -80,25 +157,27 @@ def run_all_benchmarks(csv_path: Optional[str] = None):
     results.append(res_bounded.summary())
 
     # Scenario E & F: Historical CSV Competitors
-    if os.path.exists(csv_path):
-        df_csv = pd.read_csv(csv_path)
-        print("\nLoaded historical competition data successfully.")
+    if os.path.exists(v1_csv):
+        df_csv = pd.read_csv(v1_csv)
+        competitions = df_csv['competition_id'].astype(str).unique() if 'competition_id' in df_csv.columns else []
 
         # Replay ZealousMosquito (Tournament 3XkNYY)
-        print("\n[5/6] Simulating against Historical ZEALOUS MOSQUITO (Tournament 3XkNYY)...")
-        hist_zm = HistoricalCSVCompetitor(df_csv, competition_id="3XkNYY")
-        res_zm = simulator.run(hist_zm, n_seasons=100, competitor_name="Hist: ZealousMosquito (3XkNYY)")
-        res_zm.print_summary()
-        results.append(res_zm.summary())
+        if "3XkNYY" in competitions:
+            print("\n[5/6] Simulating against Historical ZEALOUS MOSQUITO (Tournament 3XkNYY)...")
+            hist_zm = HistoricalCSVCompetitor(df_csv, competition_id="3XkNYY")
+            res_zm = simulator.run(hist_zm, n_seasons=100, competitor_name="Hist: ZealousMosquito (3XkNYY)")
+            res_zm.print_summary()
+            results.append(res_zm.summary())
 
         # Replay UncoveredElephant (Tournament 3PTJwD)
-        print("\n[6/6] Simulating against Historical UNCOVERED ELEPHANT (Tournament 3PTJwD)...")
-        hist_ue = HistoricalCSVCompetitor(df_csv, competition_id="3PTJwD")
-        res_ue = simulator.run(hist_ue, n_seasons=100, competitor_name="Hist: UncoveredElephant (3PTJwD)")
-        res_ue.print_summary()
-        results.append(res_ue.summary())
+        if "3PTJwD" in competitions:
+            print("\n[6/6] Simulating against Historical UNCOVERED ELEPHANT (Tournament 3PTJwD)...")
+            hist_ue = HistoricalCSVCompetitor(df_csv, competition_id="3PTJwD")
+            res_ue = simulator.run(hist_ue, n_seasons=100, competitor_name="Hist: UncoveredElephant (3PTJwD)")
+            res_ue.print_summary()
+            results.append(res_ue.summary())
     else:
-        print(f"\nNote: CSV file not found at {csv_path}. Skipping historical replay.")
+        print(f"\nNote: CSV file not found at {v1_csv}. Skipping historical replay.")
 
     # Grand Scorecard Table
     print("\n" + "="*105)
@@ -124,6 +203,9 @@ def run_all_benchmarks(csv_path: Optional[str] = None):
     print(summary_df.to_string(index=False))
     print("="*105)
     print(" * Note: Winner is determined strictly by Cumulative Total Revenue across all 100 seasons.\n")
+
+    if generate_chart:
+        save_comparison_chart(results)
 
     return results
 
