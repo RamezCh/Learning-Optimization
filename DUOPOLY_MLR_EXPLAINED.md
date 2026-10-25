@@ -1,5 +1,5 @@
 # The Airline Ticket Battle: How Our Pricing Algorithm Works
-### A Plain-English Guide to `duopoly_mlr.py` (No Math or Business Background Required!)
+### A Plain-English Guide to `duopoly.py` (No Math or Business Background Required!)
 
 ![Rule-Based MLR Strategy Overview](imgs/mlr_strategy_explained.png)
 
@@ -47,7 +47,7 @@ Pricing a ticket is like a **seesaw**:
 
 ## 3. Our Strategy: The "Two-Brain" System
 
-Instead of guessing prices, [`duopoly_mlr.py`](duopoly_mlr.py) uses a **Two-Brain System**:
+Instead of guessing prices, [`duopoly.py`](duopoly.py) uses a **Two-Brain System**:
 
 ```mermaid
 flowchart TD

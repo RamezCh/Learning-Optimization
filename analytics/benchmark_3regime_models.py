@@ -1,7 +1,7 @@
 """
 analytics/benchmark_3regime_models.py
 ------------------------------------
-Head-to-head evaluation across 3 distinct macroeconomic market regimes:
+Evaluation of duopoly.py (v6.0 Unified) across 3 distinct macroeconomic market regimes:
 - Regime 1: Low Demand Market (Arrivals ~68, Valuations $20-$48, e.g. v5.1 / MLR week)
 - Regime 2: Average Demand Market (Arrivals ~95, Valuations $35-$92, Standard balanced market like v3/v4)
 - Regime 3: High Demand Surge (Arrivals ~135, Valuations $25-$78, High volume surge like v5)
@@ -23,7 +23,6 @@ sys.path.append(ROOT_DIR)
 sys.path.append(ANALYTICS_DIR)
 
 import duopoly
-import duopoly_mlr
 
 from simulation_engine import (
     DuopolySimulator,
@@ -56,7 +55,7 @@ class HighDemandMarket(MarketDemandModel):
 
 def run_3regime_benchmark():
     print("="*85)
-    print(" HEAD-TO-HEAD BENCHMARK ACROSS 3 MACROECONOMIC REGIMES")
+    print(" EVALUATION OF duopoly.py (v6.0 UNIFIED) ACROSS 3 MACROECONOMIC REGIMES")
     print("="*85)
 
     regimes = {
@@ -66,8 +65,7 @@ def run_3regime_benchmark():
     }
 
     algorithms = {
-        "Master (duopoly.py)": duopoly.p,
-        "Rule-Based MLR (duopoly_mlr.py)": duopoly_mlr.p,
+        "duopoly.py (v6.0 Unified)": duopoly.p,
     }
 
     rivals = {

@@ -2,8 +2,8 @@
 compare_regression_algorithms.py
 --------------------------------
 Head-to-head simulation and benchmarking of:
-1. Master v5.1 (duopoly.py)
-2. Rule-Based Multiple Linear Regression (duopoly_mlr.py)
+1. v6.0 Unified MLR (duopoly.py)
+2. Baseline v1.0 Algorithm (OldV1Competitor)
 
 Evaluates on:
 - Copycat Competitor
@@ -27,25 +27,31 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 import duopoly
-import duopoly_mlr
 
 from simulation_engine import (
     DuopolySimulator,
     CopycatCompetitor,
     AggressiveDumperCompetitor,
     BoundedCompetitor,
+    OldV1Competitor,
     HistoricalCSVCompetitor,
     MarketDemandModel
 )
 
 def run_head_to_head_comparison():
     print("="*80)
-    print(" HEAD-TO-HEAD BENCHMARK: MASTER v5.1 vs RULE-BASED MLR")
+    print(" HEAD-TO-HEAD BENCHMARK: v6.0 UNIFIED MLR vs BASELINE v1.0")
     print("="*80)
 
+    old_v1_agent = OldV1Competitor()
+
+    def v1_pricing_func(season, period, p_hist, d_hist, comp_cap, info):
+        old_v1_agent.info_dump = info
+        return old_v1_agent.p(season, period, p_hist, d_hist, comp_cap)
+
     algorithms = {
-        "Master (v5.1)": duopoly.p,
-        "Rule-Based MLR": duopoly_mlr.p
+        "v6.0 Unified MLR": duopoly.p,
+        "Baseline v1.0": v1_pricing_func
     }
 
     # Prepare rivals
@@ -55,8 +61,13 @@ def run_head_to_head_comparison():
         "Bounded ($40-$70)": BoundedCompetitor(mean_price=55.0, spread=12.0)
     }
 
-    csv_path = 'data/v1/2026-10-14_day2_duopoly_competition_details.csv'
-    if os.path.exists(csv_path):
+    csv_candidates = [
+        'data/v1/2026-10-14_day2_duopoly_competition_details.csv',
+        '../data/v1/2026-10-14_day2_duopoly_competition_details.csv'
+    ]
+    csv_path = next((p for p in csv_candidates if os.path.exists(p)), None)
+
+    if csv_path:
         df_csv = pd.read_csv(csv_path)
         scenarios["Hist: ZealousMosquito"] = HistoricalCSVCompetitor(df_csv, "3XkNYY")
         scenarios["Hist: UncoveredElephant"] = HistoricalCSVCompetitor(df_csv, "3PTJwD")
@@ -69,96 +80,105 @@ def run_head_to_head_comparison():
             market = MarketDemandModel(seed=42)
             sim = DuopolySimulator(algorithm_func=algo_func, market_demand=market)
             res = sim.run(rival_agent, n_seasons=100, competitor_name=sc_name)
-            
-            summ = res.summary()
+            s = res.summary()
+
             records.append({
                 "Algorithm": algo_name,
                 "Scenario": sc_name,
-                "Our Revenue ($k)": summ["our_total_revenue"] / 1000.0,
-                "Rival Revenue ($k)": summ["rival_total_revenue"] / 1000.0,
-                "Revenue Ratio": summ["our_total_revenue"] / max(1.0, summ["rival_total_revenue"]),
-                "Win Rate (%)": summ["season_win_rate_pct"],
-                "Our Load Factor (%)": summ["our_load_factor_pct"],
-                "Our Mean Price ($)": summ["our_avg_price"]
+                "Our_Revenue_k": s["our_total_revenue"] / 1000.0,
+                "Rival_Revenue_k": s["rival_total_revenue"] / 1000.0,
+                "Win_Rate": s["season_win_rate_pct"],
+                "Load_Factor": s["our_load_factor_pct"],
+                "Avg_Price": s["our_avg_price"]
             })
-            print(f"  {sc_name:<25}: Rev = ${summ['our_total_revenue']/1000.0:.1f}k vs Rival ${summ['rival_total_revenue']/1000.0:.1f}k | Win Rate = {summ['season_win_rate_pct']:.0f}%")
+            print(f"  {sc_name:<25}: Rev = ${s['our_total_revenue']/1000.0:5.1f}k vs Rival ${s['rival_total_revenue']/1000.0:5.1f}k | Win Rate = {s['season_win_rate_pct']:.0f}%")
 
     df_res = pd.DataFrame(records)
 
-    # -------------------------------------------------------------------------
-    # Generate Visual Comparison Plot
-    # -------------------------------------------------------------------------
+    # -------------------------------------------------------------
+    # Generate Chart: algorithm_variant_comparison.png
+    # -------------------------------------------------------------
     os.makedirs('imgs', exist_ok=True)
+    chart_path = 'imgs/algorithm_variant_comparison.png'
+
     fig, axes = plt.subplots(1, 2, figsize=(16, 6.5), dpi=200)
     fig.patch.set_facecolor('#ffffff')
 
-    sc_list = list(scenarios.keys())
-    x = np.arange(len(sc_list))
+    scenarios_list = list(scenarios.keys())
+    x = np.arange(len(scenarios_list))
     width = 0.35
 
-    colors = {
-        "Master (v5.1)": '#0f766e',               # Teal
-        "Rule-Based MLR": '#2563eb',              # Blue
-    }
-
-    # Subplot 1: Total Revenue ($k)
+    # Panel 1: Revenue by Scenario
     ax1 = axes[0]
     ax1.set_facecolor('#f8fafc')
     ax1.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
 
-    for i, (algo_name, color) in enumerate(colors.items()):
-        sub_df = df_res[df_res['Algorithm'] == algo_name]
-        revs = [sub_df[sub_df['Scenario'] == sc]['Our Revenue ($k)'].values[0] for sc in sc_list]
-        bars = ax1.bar(x + (i - 0.5) * width, revs, width, label=algo_name, color=color, alpha=0.9)
-        for b in bars:
-            h = b.get_height()
-            ax1.annotate(f'${h:.0f}k', xy=(b.get_x() + b.get_width()/2, h),
-                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=8, fontweight='bold')
+    v6_rev = df_res[df_res['Algorithm'] == "v6.0 Unified MLR"]['Our_Revenue_k'].values
+    v1_rev = df_res[df_res['Algorithm'] == "Baseline v1.0"]['Our_Revenue_k'].values
 
-    ax1.set_title('100-Season Revenue Comparison ($k)', fontsize=13, fontweight='bold', pad=12)
+    b1 = ax1.bar(x - width/2, v6_rev, width, label='v6.0 Unified MLR (duopoly.py)', color='#10b981', edgecolor='#047857')
+    b2 = ax1.bar(x + width/2, v1_rev, width, label='Baseline v1.0 Heuristic', color='#94a3b8', edgecolor='#475569')
+
+    ax1.set_title('Panel 1: Total Revenue ($k) Across 100 Seasons per Scenario', fontsize=12, fontweight='bold', pad=12)
     ax1.set_xticks(x)
-    ax1.set_xticklabels(sc_list, rotation=15, ha='right', fontsize=9)
-    ax1.set_ylabel('Total Revenue ($k)', fontsize=10, fontweight='bold')
-    ax1.legend(loc='upper right', frameon=True, fontsize=9)
+    ax1.set_xticklabels(scenarios_list, rotation=15, ha='right', fontsize=9.5)
+    ax1.set_ylabel('Total Revenue ($k)', fontsize=11, fontweight='bold')
+    ax1.legend(loc='upper left', frameon=True)
 
-    # Subplot 2: Win Rate (%)
+    for bar in b1:
+        h = bar.get_height()
+        ax1.annotate(f'${h:.1f}k', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#047857')
+    for bar in b2:
+        h = bar.get_height()
+        ax1.annotate(f'${h:.1f}k', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#475569')
+
+    # Panel 2: Win Rate by Scenario
     ax2 = axes[1]
     ax2.set_facecolor('#f8fafc')
     ax2.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
 
-    for i, (algo_name, color) in enumerate(colors.items()):
-        sub_df = df_res[df_res['Algorithm'] == algo_name]
-        win_rates = [sub_df[sub_df['Scenario'] == sc]['Win Rate (%)'].values[0] for sc in sc_list]
-        bars = ax2.bar(x + (i - 0.5) * width, win_rates, width, label=algo_name, color=color, alpha=0.9)
-        for b in bars:
-            h = b.get_height()
-            ax2.annotate(f'{h:.0f}%', xy=(b.get_x() + b.get_width()/2, h),
-                         xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=8, fontweight='bold')
+    v6_wins = df_res[df_res['Algorithm'] == "v6.0 Unified MLR"]['Win_Rate'].values
+    v1_wins = df_res[df_res['Algorithm'] == "Baseline v1.0"]['Win_Rate'].values
 
-    ax2.set_title('Tournament Win Rate (%)', fontsize=13, fontweight='bold', pad=12)
+    bw1 = ax2.bar(x - width/2, v6_wins, width, label='v6.0 Unified MLR (duopoly.py)', color='#3b82f6', edgecolor='#1d4ed8')
+    bw2 = ax2.bar(x + width/2, v1_wins, width, label='Baseline v1.0 Heuristic', color='#cbd5e1', edgecolor='#64748b')
+
+    ax2.set_title('Panel 2: Season Win Rate (%) Across 100 Seasons per Scenario', fontsize=12, fontweight='bold', pad=12)
     ax2.set_xticks(x)
-    ax2.set_xticklabels(sc_list, rotation=15, ha='right', fontsize=9)
-    ax2.set_ylabel('Win Rate (%)', fontsize=10, fontweight='bold')
+    ax2.set_xticklabels(scenarios_list, rotation=15, ha='right', fontsize=9.5)
+    ax2.set_ylabel('Win Rate (%)', fontsize=11, fontweight='bold')
     ax2.set_ylim(0, 115)
-    ax2.legend(loc='upper right', frameon=True, fontsize=9)
+    ax2.legend(loc='upper right', frameon=True)
+
+    for bar in bw1:
+        h = bar.get_height()
+        ax2.annotate(f'{h:.0f}%', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#1d4ed8')
+    for bar in bw2:
+        h = bar.get_height()
+        ax2.annotate(f'{h:.0f}%', xy=(bar.get_x() + bar.get_width()/2, h),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='#475569')
 
     plt.tight_layout()
-    chart_path = 'imgs/algorithm_variant_comparison.png'
     plt.savefig(chart_path, bbox_inches='tight')
     plt.close()
     print(f"\nSaved comparison chart to: {chart_path}")
 
-    # Summary
+    # Aggregate summary
     print("\n" + "="*80)
     print(" AGGREGATE SUMMARY ACROSS ALL 5 SCENARIOS (500 SEASONS EACH)")
     print("="*80)
-    agg = df_res.groupby('Algorithm').agg(
-        Total_Revenue=('Our Revenue ($k)', 'sum'),
-        Mean_Win_Rate=('Win Rate (%)', 'mean'),
-        Mean_Load_Factor=('Our Load Factor (%)', 'mean')
-    ).reset_index().sort_values(by='Total_Revenue', ascending=False)
-    print(agg.to_string(index=False))
+    agg = df_res.groupby('Algorithm').agg({
+        'Our_Revenue_k': 'sum',
+        'Win_Rate': 'mean',
+        'Load_Factor': 'mean'
+    }).rename(columns={'Our_Revenue_k': 'Total_Revenue'}).sort_values(by='Total_Revenue', ascending=False)
+    print(agg)
     print("="*80)
 
-if __name__ == "__main__":
+    return df_res
+
+if __name__ == '__main__':
     run_head_to_head_comparison()
