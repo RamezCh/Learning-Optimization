@@ -140,9 +140,9 @@ def test_season_bend_is_recovered():
 def test_target_bend_defaults_then_learns_from_good_seasons():
     state = duopoly._initialize_or_get_state(None, 1)
     assert duopoly._current_target_bend(state) == duopoly.TARGET_C_DEFAULT      # nothing learned yet
-    state['detected_regime'] = 'high_demand'
+    state['detected_regime'] = 'high_demand'                                   # regime no longer matters
     state['target_c_obs'] = [0.8]
-    expected = (3 * 0.60 + 0.8) / 4                                            # prior counts as 3 seasons
+    expected = (3 * 0.15 + 0.8) / 4                                            # start value counts as 3 seasons
     assert abs(duopoly._current_target_bend(state) - expected) < 1e-9
     state['target_c_obs'] = [2.0] * 50                                          # clipped to the safety limit
     assert duopoly._current_target_bend(state) == duopoly.TARGET_C_MAX
@@ -158,3 +158,14 @@ def test_end_of_season_learns_only_from_full_seasons():
     weak = np.array([1 if t % 3 == 0 else 0 for t in range(100)])              # 34 seats
     _, info = duopoly.p(2, 101, prices, weak, True, info)
     assert len(info['target_c_obs']) == 1                                        # not learned from
+
+
+def test_circuit_breaker_only_undercuts_a_cheap_rival():
+    def price(rival):
+        state = duopoly._initialize_or_get_state(None, 3)
+        state['consecutive_low_sales'] = 2
+        state['rival_last_price'] = rival
+        state['rival_recent_prices'] = [rival] * 5
+        return duopoly._calculate_duopoly_price(50, 0.0, 0.8, 40, state)
+    assert price(30.0) == 29.5                                                  # cheap rival: undercut by $0.50
+    assert price(65.0) < 64.0                                                   # expensive rival: normal pricing, not $64.50

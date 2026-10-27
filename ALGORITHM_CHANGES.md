@@ -1,4 +1,4 @@
-# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1` → `v6.0` → `v6.1` → `v6.2`)
+# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1` → `v6.0` → `v6.1` → `v6.2` → `v6.3`)
 
 This document archives the complete iterative engineering progression of our autonomous pricing algorithm, [`duopoly.py`](duopoly.py), across eight generations:
 - **`v1.0` Baseline**: The initial heuristic holdout strategy that failed due to flawed market size assumptions (89.9% seat spoilage, \$0 revenue in 4 of 6 tournaments).
@@ -10,6 +10,7 @@ This document archives the complete iterative engineering progression of our aut
 - **`v6.0` Unified Econometric Engine**: closed-form MLR pricing, 3 demand-regime priors, fast in-season low-demand latch, high-rival ceiling guard (§16).
 - **`v6.1` Correctness release**: fixes four v6.0 bugs (phantom season, over-sensitive low-demand latch, constant monopoly price, rank-deficient regression), corrects the simulator's arrival scaling, and makes all figures reproducible from data (§17).
 - **`v6.2` Learned target curve**: the bend of the target curve is learned per market from the booking curves of past seasons with 75+ seats sold, starting from a prior per demand regime; +1.95% revenue in simulation (§18).
+- **`v6.3` Ablation study & simplification**: every part switched off one at a time; fixes a circuit-breaker bug (\$201 → \$917 per season in one scenario) and removes the regime priors of the target curve; +2.09% vs v6.2 (§19).
 
 ---
 
@@ -723,7 +724,7 @@ Each match plays the same market up to 100 times, so the plan can be learned fro
 
 1. **Which seasons count as "good".** Only seasons with **75 or more** seats sold (`TARGET_LEARN_MIN_SOLD`). In a season that sold out early or sold too few seats, the booking curve says more about our prices than about when customers arrive.
 2. **One bend per good season.** At the end of the season (period 101) the season's booking curve is turned into shares (seats sold by day $t$ ÷ seats sold in the season) and the bend $c$ is fitted to it by least squares (`_fit_season_target_bend`). Fitting a single number keeps the plan smooth and always ending at 80 seats.
-3. **Start from what similar markets did.** Old tournament data are grouped by regime, and each group's average bend is a prior (`TARGET_C_PRIOR`): low demand 0.67, average 0.19, high 0.60 (fitted on the 75+ seasons of the same data files as the regime priors; `3kGhWc` excluded because its rival stayed at \$71 and the curve reflects our holdout, not the market).
+3. **Start from what similar markets did** *(removed in v6.3, §19: every market now starts from 0.15)*. Old tournament data are grouped by regime, and each group's average bend is a prior (`TARGET_C_PRIOR`): low demand 0.67, average 0.19, high 0.60 (fitted on the 75+ seasons of the same data files as the regime priors; `3kGhWc` excluded because its rival stayed at \$71 and the curve reflects our holdout, not the market).
 4. **Online update.** After every season:
    $$c = \operatorname{clip}\!\left(\frac{3 \cdot c_{\text{prior}} + \sum_i c_i}{3 + n},\ 0,\ 0.8\right)$$
    where $c_i$ are the bends of the $n$ good seasons so far and $c_{\text{prior}}$ is the prior of the regime the season was classified as. The prior counts like 3 seasons (`TARGET_PRIOR_WEIGHT`), so one unusual season moves the plan only a little, and after about 10 good seasons the market's own data dominate.
@@ -782,3 +783,60 @@ On the single-seed scenario suite (`analytics/run_benchmark.py`, 6 rivals × 100
 * The bend is still one number: a plan with a different shape (e.g. a flat middle) cannot be represented.
 * A season counts as "good" only if it sold 75+ seats. In low-demand markets there are few such seasons, so the plan stays near 0.15 there.
 * The shadow-cost constants (§17.7) were tuned with the fixed 0.15 curve; re-tuning them together with the learned plan is open.
+
+---
+
+## 19. The `v6.3` Ablation Study and Simplification
+
+### 19.1 Method
+
+`analytics/ablation_study.py` switches parts of `duopoly.py` off, one at a time and all together, and measures the change in total revenue over the same 17 scenarios as §18 (3 simulated markets × 4 rival types, plus 5 replayed tournament rivals; 10 seeds × 30 seasons, the same seeds for every configuration). The switches are text substitutions on the current `duopoly.py`; with nothing switched off, the copy gives exactly the same revenue as `duopoly.py`. The script also counts how often each guard actually changes the price.
+
+Before settling on v6.3 we also tested 18 combinations (scratch runs, same scenarios). The main lesson: **effects do not add up**. Six guards that each cost at most 0.4% when removed alone cost **−1.4%** when removed together (−9% in the low market against the aggressive dumper). Each additional guard removed cost about 0.3–0.5%.
+
+### 19.2 Changes in v6.3
+
+1. **Circuit-breaker bug fixed.** After two weak seasons (< 42 seats) the breaker priced us \$0.50 under the rival. Against a rival priced above what customers will pay (low market, WTP \$20–\$48, rival \$40–\$70), that meant we sold almost nothing, the weak seasons continued, and the breaker never switched off: **\$201 per season, 8% of seats sold**. The breaker now fires only when the rival is cheap (5-day average < \$38), the situation it was built for (the \$27 dumper deadlock in `3d8tDh`). Test: `test_circuit_breaker_only_undercuts_a_cheap_rival`.
+2. **Target-curve regime priors removed.** The learned bend now starts from 0.15 in every market (still counting like 3 seasons). The priors (0.67 / 0.19 / 0.60) were fitted on old tournament data, so they were scenario-dependent; removing them cost 0.1% (within noise) and removes three fitted constants and the link between the target curve and the regime classifier.
+
+### 19.3 Result: v6.3 vs v6.2
+
+Same 17 scenarios, 10 seeds × 30 seasons, paired:
+
+| Scenario | v6.2 | v6.3 | Change | Seats sold v6.2 → v6.3 |
+| :--- | :---: | :---: | :---: | :---: |
+| Low market, bounded (\$40–\$70) rival | \$201 | **\$917** | **+355%** | 8.0% → 47.3% |
+| Replayed `UncoveredElephant` (`3PTJwD`) | \$2,118 | \$2,096 | −1.1% | 80.8% → 80.5% |
+| High market, aggressive dumper | \$1,828 | \$1,811 | −0.9% | 85.6% → 84.4% |
+| All other 14 scenarios | – | – | −0.3% to +0.6% | unchanged |
+| **Total** | | | **+2.09% ± 0.17%**, better in 10 / 10 seeds | |
+
+Standard benchmarks (`benchmark_3regime_models.py`, 5 seeds × 30 seasons, sum over 4 rivals): low market \$4,059 (v6.2: \$3,324, **+22%**), average \$8,164 (\$8,192, −0.3%), high \$10,045 (\$10,055, −0.1%). Single-seed suite (`run_benchmark.py`): \$1,282.0k (v6.2: \$1,281.9k).
+
+### 19.4 What each part is worth (v6.3)
+
+![Ablation study](imgs/ablation_study.png)
+
+| Part switched off | Total change | Worst scenario | Changes the price on | Verdict |
+| :--- | :---: | :--- | :---: | :--- |
+| High-rival ceiling (rival ≥ \$58) | **−13.5%** | −82% (low market, old v1.0 rival) | 29% of days | Essential |
+| All guards at once (learned curve kept) | −5.7% | −100% | – | |
+| Learned target curve | −1.8% | −11% (average market, old v1.0) | – | Essential |
+| Late clearance discount | −0.6% | −32% (low market, bounded rival) | 23% | Keep |
+| Late cap under a high rival | −0.5% | −3% | 1% | Keep (small) |
+| Behind-pace cap | −0.3% | −2% | 5% | Keep (small) |
+| Regime classification | −0.2% | −6% (low market, dumper) | – | Keep (small) |
+| Circuit breaker (fixed) | −0.2% | −5% (low market, copycat) | 3% | Keep (small) |
+| Cheap-rival floor | +0.2% | −1% | 8% | Neutral |
+| Deep-dumper holdout | +0.8% | −2% | 1% | Trade-off |
+| In-season low-demand test (SPRT) | +1.2% | −6% (low market, copycat) | – | Trade-off |
+| \$18 floor in low demand | +1.9% | −16% (low market, copycat) | – | Trade-off |
+| Price band around the rival | +3.3% | −6% (average market, copycat) | 62% | Trade-off |
+
+Reading the "trade-off" rows: switching these off earns more in the normal and replayed markets, but loses heavily in specific situations, mostly the low-demand market. Removing the low-demand chain (SPRT + \$18 floor + dumper holdout) together gained about 3% overall in the scratch runs but lost **20–23%** in the low market against a copycat. Low-demand rounds were our worst real tournaments (§16.1), and our simulator's low market is a rough stand-in for them, so we keep these guards. The price band is the main protection when the regression (test $R^2 \approx 0.15$) is wrong, so it stays too.
+
+### 19.5 Limits
+
+* All results come from our own simulator, with rivals and markets we chose. A guard that rarely fires here (the dumper holdout changes the price on 1% of days) may matter more in a tournament.
+* Ten seeds give a 95% interval of about ±0.2% on the total, so differences below about 0.3% are not meaningful.
+* Re-run after any change: `python analytics/ablation_study.py --compare <previous duopoly.py>`. If a switch no longer matches the code, the script stops with a message naming it.

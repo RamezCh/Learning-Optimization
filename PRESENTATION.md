@@ -2,7 +2,7 @@
 ### Berliner Hochschule für Technik (BHT) — Learning Optimization (October 2026)
 **Author:** Ramez Chreide  
 **Course:** Learning Optimization — Duopoly Pricing Challenge (DPC)  
-**Codebase:** [`duopoly.py`](duopoly.py) (v6.2 MLR Engine) & [`analytics/app.py`](analytics/app.py) (Streamlit Simulation Studio)
+**Codebase:** [`duopoly.py`](duopoly.py) (v6.3 MLR Engine) & [`analytics/app.py`](analytics/app.py) (Streamlit Simulation Studio)
 
 ![Rule-Based MLR Strategy Overview](imgs/mlr_strategy_explained.png)
 
@@ -129,7 +129,7 @@ The tournament data showed that one fixed bend does not fit every market. Writte
 
 v6.2 therefore learns $c$ per match:
 1. After every season with **75+ seats sold** (high capacity utilization), fit that season's bend to its booking curve.
-2. Average these bends with a prior for the demand regime (low 0.67, average 0.19, high 0.60, from the old tournament data), the prior counting like 3 seasons: $c = (3\,c_{\text{prior}} + \sum c_i)/(3 + n)$, kept between 0 and 0.8.
+2. Average these bends with the starting value 0.15, which counts like 3 seasons: $c = (3 \cdot 0.15 + \sum c_i)/(3 + n)$, kept between 0 and 0.8. (v6.2 started from a different value per demand regime; v6.3 removed that because it added nothing measurable and depended on old data.)
 3. Until the first such season, keep 0.15.
 
 In simulation this earns **+1.95%** more than v6.1 (better in 10 of 10 seeds) at the same capacity utilization.
@@ -172,7 +172,7 @@ $$\text{Inventory Gap}(t) = \text{Actual Remaining Seats}(t) - \text{Target Rema
 
 ---
 
-# Act 4: The Climax — Unified Econometric Dynamic Pricing (v6.0 → v6.2)
+# Act 4: The Climax — Unified Econometric Dynamic Pricing (v6.0 → v6.3)
 
 ### Why Master Wasn't Enough & Why Poisson-Logit Was Retired
 Our previous bot was stuck between two extremes:
@@ -210,6 +210,15 @@ flowchart TD
 
     Input["New Day t (1..100)"] --> G1 --> M1 --> M2 --> M3 --> G2 --> G4 --> G3 --> Output["Optimal Continuous Ticket Price"]
 ```
+
+### v6.3: switching every part off
+To see which rules earn their place, we switched each part of the algorithm off, one at a time and together, across 17 scenarios and 10 seeds (`analytics/ablation_study.py`):
+- Two parts are essential: the ceiling against expensive rivals (−13.5% without it) and the learned target curve (−1.8%).
+- Most guards are each worth only 0.2–0.6%, but removed together they cost far more, so they stay.
+- Four guards are trade-offs: the simulator earns a bit more without them, but loses up to 23% in a low-demand market, our worst real-tournament situation.
+- The study found a bug: after two weak seasons, the circuit breaker priced just below a rival that was more expensive than customers would pay, so we sold almost nothing (\$201 per season). Fixed in v6.3: **+2.09%** total, better in 10 of 10 seeds.
+
+![Ablation study](imgs/ablation_study.png)
 
 ---
 
@@ -266,11 +275,11 @@ The priors are only used for roughly the first season; after that the model is r
 
 `python analytics/benchmark_3regime_models.py` (3 simulated markets × 4 rivals × 5 seeds × 30 seasons; mean revenue per season, summed over rivals):
 
-| Simulated market | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
-| :--- | :---: | :---: | :---: | :---: |
-| Low (~68 arrivals, WTP \$20–\$48) | \$3,324 | **\$3,328** | \$3,035 | \$1,425 |
-| Average (~95 arrivals, WTP \$35–\$92) | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
-| High (~135 arrivals, WTP \$25–\$78) | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
+| Simulated market | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Low (~68 arrivals, WTP \$20–\$48) | **\$4,059** | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
+| Average (~95 arrivals, WTP \$35–\$92) | \$8,164 | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals, WTP \$25–\$78) | \$10,045 | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
 
 *Earlier drafts listed 88.9%–97.8% win rates and "+3,289% vs a \$72 rival". No script in the repository reproduces those numbers, so they have been withdrawn.*
 
@@ -325,6 +334,6 @@ Use this exact 5-slide script if presenting to a general audience, investors, or
 | :--- | :--- |
 | **"Why not just undercut the rival by \$1 every day?"** | *In our simulations that earns 30–60% less overall. It does about as well against a cheap dumper, which is why we follow cheap rivals too.* |
 | **"What is the difference between the Target Curve and the Booking Curve?"** | *The Target Curve is the planned, slightly back-loaded selling pace; the Booking Curve is the actual empirical sales trajectory.* |
-| **"Is the target curve still fixed?"** | *No: since v6.2 its bend is learned from the booking curves of this match's seasons with 75+ seats sold, starting from a prior for the demand regime.* |
+| **"Is the target curve still fixed?"** | *No: since v6.2 its bend is learned from the booking curves of this match's seasons with 75+ seats sold, starting from 0.15 in every market.* |
 | **"What happens if market demand is unexpectedly low?"** | *A statistical test runs during the season; once low demand is 99× more likely than normal (about 4% false alarms on past data), we unlock an \$18 floor and lower monopoly prices.* |
 | **"Why did you delete Poisson-Logit?"** | *Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; a linear model gives a closed-form price instantly, which is easy to explain and to guard.* |

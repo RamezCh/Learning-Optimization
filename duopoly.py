@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.2).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.3).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -22,11 +22,13 @@ Architectural Overview:
    p* = argmax_p [ (p - μ(t, c)) · (A + B·p) ] = (A - B·μ) / (2·(-B)).
    Demand model: d = β₀ + β_p·p + β_diff·(p_rival - p) + β_t·τ  (features are linearly
    independent; the old [p, p_rival, diff, τ] design had rank 3, not 4).
-4. Learned Target Curve (v6.2):
+4. Learned Target Curve (v6.2, simplified in v6.3):
    The target booking curve is 80 * ((1 - c)*tau + c*tau^2). Its bend c starts at 0.15 and,
    after every season that sold >= 75 seats, is re-estimated from this match's own booking
-   curves, blended with a demand-group prior that counts as 3 seasons of evidence:
-       c = (3 * prior + sum(season bends)) / (3 + number of such seasons), clipped to [0, 0.8].
+   curves; the starting value 0.15 counts as 3 seasons of evidence:
+       c = (3 * 0.15 + sum(season bends)) / (3 + number of such seasons), clipped to [0, 0.8].
+   (v6.2 used a different starting value per demand regime, fitted on old tournament data;
+   the ablation study showed it added nothing measurable, so v6.3 removed it.)
 5. Continuous Capacity Opportunity Shadow Cost (μ):
    Dynamic pacing without heuristic step-ladders:
    μ(t, c) smoothly discounts when behind schedule and extracts scarcity premium when ahead.
@@ -72,11 +74,9 @@ SPRT_FLOOR: float = -3.0          # cap accumulated evidence for "normal" so the
 SPRT_MIN_OBS: int = 8
 
 # Learned target curve (v6.2). Bend c of TargetSold(tau) = 80 * ((1 - c)*tau + c*tau^2).
-# Group priors = mean fitted bend of tournament seasons that sold >= 75 seats
-# (data/v3+v4: 0.19, data/v5: 0.60, data/mlr+v5.1+poisson_logit: 0.67).
+# The starting value 0.15 is the hand-chosen v6.1 bend; it is also the prior for the update.
 TARGET_C_DEFAULT: float = 0.15
-TARGET_C_PRIOR: Dict[str, float] = {"low_demand": 0.67, "average_demand": 0.19, "high_demand": 0.60}
-TARGET_PRIOR_WEIGHT: float = 3.0           # the prior counts like 3 seasons of evidence
+TARGET_PRIOR_WEIGHT: float = 3.0           # the starting value counts like 3 seasons of evidence
 TARGET_C_MIN: float = 0.0
 TARGET_C_MAX: float = 0.8                  # never plan a more back-loaded season than this
 TARGET_LEARN_MIN_SOLD: int = 75            # only learn from seasons that (nearly) filled the plane
@@ -555,13 +555,12 @@ def _current_target_bend(state: Dict[str, Any]) -> float:
     """
     Bend of the target curve for the next season.
     - No season of this match has sold >= 75 seats yet: keep the default 0.15.
-    - Otherwise: blend the demand-group prior (weight 3) with this match's fitted bends.
+    - Otherwise: blend the starting value 0.15 (weight 3) with this match's fitted bends.
     """
     observed = state.get("target_c_obs", [])
     if not observed:
         return TARGET_C_DEFAULT
-    prior = TARGET_C_PRIOR.get(state.get("detected_regime", "average_demand"), TARGET_C_DEFAULT)
-    bend = (TARGET_PRIOR_WEIGHT * prior + float(sum(observed))) / (TARGET_PRIOR_WEIGHT + len(observed))
+    bend = (TARGET_PRIOR_WEIGHT * TARGET_C_DEFAULT + float(sum(observed))) / (TARGET_PRIOR_WEIGHT + len(observed))
     return float(np.clip(bend, TARGET_C_MIN, TARGET_C_MAX))
 
 
@@ -611,8 +610,11 @@ def _calculate_duopoly_price(
     is_low_demand = state.get("detected_low_demand", False)
     is_low_wtp = state.get("detected_low_wtp", False)
 
-    # Branch 1: Universal Low-Sales Circuit Breaker
-    if consecutive_low_sales >= 2:
+    # Branch 1: Low-Sales Circuit Breaker (only against a cheap rival, v6.3)
+    # After 2+ weak seasons, undercut a rival priced < $38. Against an expensive rival this
+    # rule priced us just under it, above what customers would pay, so we sold nothing and
+    # the weak seasons never ended (low market vs $40-$70 rival: $201/season; $917 with the fix).
+    if consecutive_low_sales >= 2 and rival_recent_avg < 38.0:
         breaker_price = min(latest_rival_price - 0.5, rival_recent_avg - 0.5)
         if inventory_gap > 3.0:
             breaker_price -= min(4.0, 0.35 * inventory_gap)

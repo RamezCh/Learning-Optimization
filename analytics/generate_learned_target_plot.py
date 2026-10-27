@@ -75,7 +75,7 @@ def create_plot(output_path: Optional[str] = None) -> str:
         avg, bend, n = match_shape(comp)
         ax.plot(days, avg, color=color, linewidth=3, label=f'{comp}: average real booking curve ({n} seasons)')
         ax.plot(days, curve(bend), color=color, linewidth=2, linestyle='--', label=f'{comp}: learned plan (c = {bend:.2f})')
-    ax.annotate('Day 50: fixed plan 37 seats,\nlate market only 25', xy=(50, 25), xytext=(56, 8), fontsize=11,
+    ax.annotate('Day 50: fixed plan 37 seats,\nlate market only 24', xy=(50, 25), xytext=(56, 8), fontsize=11,
                 arrowprops=dict(arrowstyle='->', color=COLORS['dark']))
     ax.set_title('Real data: two v5 markets book very differently')
     ax.set_xlabel('Selling day')

@@ -139,7 +139,7 @@ The coefficient **$0.15$** is a hand-chosen design parameter (it was not fitted 
 * **85% linear base ($0.85\tau$):** keeps a steady pace so late spoilage is unlikely if demand falters.
 * **15% quadratic part ($0.15\tau^2$):** shifts sales slightly later. The largest difference from a linear pace is $80 \cdot 0.15 \cdot 0.25 = 3$ seats, at mid-season.
 * *Trade-off:* a larger coefficient (e.g. $0.40$) backloads more inventory and risks spoilage if the late surge is weak; $0$ gives a linear pace.
-* **Since v6.2, 0.15 is only the starting value.** Real markets book very differently (fitted bend 0.01 in `3UmBuN`, 0.82 in `Gq2CUL`), so `duopoly.py` now learns the bend $c$ in $80\cdot((1-c)\tau + c\tau^2)$ from the booking curves of past seasons with 75+ seats sold (§4.4 below, §18 of ALGORITHM_CHANGES).
+* **Since v6.2, 0.15 is only the starting value.** Real markets book very differently (fitted bend 0.01 in `3UmBuN`, 0.82 in `Gq2CUL`), so `duopoly.py` now learns the bend $c$ in $80\cdot((1-c)\tau + c\tau^2)$ from the booking curves of past seasons with 75+ seats sold, starting from 0.15 in every market (§4.4 below, §18–19 of ALGORITHM_CHANGES).
 
 ---
 
@@ -365,10 +365,10 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 ---
 
-## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.2)
+## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.3)
 
 > [!IMPORTANT]
-> For the full history (`v1.0` → `v6.2`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve.
+> For the full history (`v1.0` → `v6.3`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve. v6.3 (§19) tests every part by switching it off, fixes a circuit-breaker bug found that way, and removes the regime priors of the target curve.
 
 `duopoly.py` combines a **closed-form price from a linear demand regression** with a small set of **guards** for situations where the regression is unreliable (cheap or very expensive rivals, monopoly, the last days of a season).
 
@@ -378,7 +378,7 @@ flowchart TD
     SoldOut -- "YES" --> P130["Post $130 (no seats to sell)"]
     SoldOut -- "NO" --> Rival{"Rival has seats?"}
     Rival -- "NO (monopoly)" --> Mono["Monopoly band by regime<br/>price falls linearly as burn rate rises 0.3 → 1.2"]
-    Rival -- "YES" --> CB{"2+ consecutive seasons < 42 seats?"}
+    Rival -- "YES" --> CB{"2+ consecutive seasons < 42 seats<br/>and rival < $38?"}
     CB -- "YES" --> Breaker["Circuit breaker:<br/>undercut rival by $0.50"]
     CB -- "NO" --> Deep{"Rival ≤ $19.50?"}
     Deep -- "YES" --> Hold["Hold $58 until safe deadline<br/>(not in low demand), else contest ≥ $18"]
@@ -394,7 +394,7 @@ flowchart TD
 | **1. Demand regression** | OLS on own history: $d = \beta_0 + \beta_p p + \beta_{\text{diff}}(p_{\text{riv}} - p) + \beta_t \tau$. Uses identified slopes $B = \beta_p - \beta_{\text{diff}}$ (own price) and $C = \beta_{\text{diff}}$ (rival price). Guards: $B \le -0.006$, $C \ge 0$. Refit once per season on the last 2,500 observations; regime priors until 80 observations exist. | The v6.0 feature set $[p, p_{\text{riv}}, p_{\text{riv}} - p, \tau]$ had rank 3, so its individual coefficients were not identified. |
 | **2. Closed-form price** | $p^* = \arg\max_p (p - \mu)(A + Bp) = \frac{A - B\mu}{2(-B)}$ with $A = \beta_0 + C\,p_{\text{riv}} + \beta_t\tau$, then clipped to a band around the rival. $p_{\text{riv}}$ is yesterday's rival price (§17.6 of ALGORITHM_CHANGES); the guardrails use the 5-day average. | Marginal-revenue logic with a capacity opportunity cost. |
 | **3. Shadow cost μ** | $\mu = \operatorname{clip}(26 - 16(\text{burn} - 0.8) - 2.4\cdot\text{gap},\ 10\ (2\text{ if low WTP}),\ 56)$ | Raises price when ahead of the target curve, lowers it when behind. |
-| **3b. Learned target curve (v6.2)** | Target $= 80\cdot((1-c)\tau + c\tau^2)$. After each season with 75+ seats sold, the season's bend $c_i$ is fitted to its booking curve; $c = \operatorname{clip}\big((3\,c_{\text{prior}} + \sum c_i)/(3 + n),\ 0,\ 0.8\big)$ with a prior per regime (low 0.67, average 0.19, high 0.60); $c = 0.15$ until the first such season. | The gap (and so μ) is measured against how *this* market books, so we stop discounting in late-booking markets. |
+| **3b. Learned target curve (v6.2, simplified in v6.3)** | Target $= 80\cdot((1-c)\tau + c\tau^2)$. After each season with 75+ seats sold, the season's bend $c_i$ is fitted to its booking curve; $c = \operatorname{clip}\big((3 \cdot 0.15 + \sum c_i)/(3 + n),\ 0,\ 0.8\big)$, so the starting value 0.15 counts like 3 seasons. Same rule in every market. | The gap (and so μ) is measured against how *this* market books, so we stop discounting in late-booking markets. |
 | **4. Regime classification** | Re-evaluated at the end of **every** season: `low_demand` if the season sold < 42 seats (or no sales at ≥ \$55 in 4+ tries with < 60 seats); `high_demand` if the last two seasons averaged ≥ 72 seats with no sales at ≥ \$55; otherwise `average_demand`. Never permanent. | v6.0 latched low demand permanently, and counted a phantom 0-seat season at every season start. |
 | **5. In-season low-demand test** | SPRT on periods where we were cheaper than an in-stock rival at ≤ \$55 (see §4.2). Resets each season. | v6.0's "4 zero-sale days" rule fired in 44% of good seasons. |
 | **6. Monopoly pricing** | Band per regime (low \$28–\$44, average \$48–\$72, high \$50–\$66; skim price capped at \$60 if WTP looks truncated). Price falls linearly as the burn rate rises from 0.3 to 1.2. | v6.0 always returned the floor (\$46/\$50) because the band's top was below its floor. |
@@ -463,13 +463,24 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 
 `python analytics/benchmark_3regime_models.py --compare <old_duopoly.py>` runs 3 simulated markets × 4 rivals × 5 seeds × 30 seasons. Mean revenue per season, summed over the 4 rivals:
 
-| Market (simulated) | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
-| :--- | :---: | :---: | :---: | :---: |
-| Low (~68 arrivals, WTP \$20–\$48) | \$3,324 | **\$3,328** | \$3,035 | \$1,425 |
-| Average (~95 arrivals, WTP \$35–\$92) | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
-| High (~135 arrivals, WTP \$25–\$78) | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
+| Market (simulated) | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Low (~68 arrivals, WTP \$20–\$48) | **\$4,059** | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
+| Average (~95 arrivals, WTP \$35–\$92) | \$8,164 | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals, WTP \$25–\$78) | \$10,045 | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
 
-95% confidence intervals per cell are printed by the script, typically ±\$15–\$75 per rival. The naive strategy does better against the aggressive dumper in the average and high markets (\$1,437 vs \$1,311 and \$1,867 vs \$1,824). Most of v6.2's gain comes from the old v1.0 rival (+13% average, +7.5% high); over 17 scenarios including 5 replayed tournament rivals and 10 seeds, v6.2 earns +1.95% ± 0.23% more than v6.1 (ALGORITHM_CHANGES §18.4). This is a simulator with hand-chosen parameters, so treat it as a regression test rather than a forecast of tournament results.
+95% confidence intervals per cell are printed by the script, typically ±\$15–\$75 per rival. The naive strategy does better against the aggressive dumper in the average and high markets (\$1,437 vs \$1,311 and \$1,867 vs \$1,829). v6.3's gain is the circuit-breaker fix in the low market against the bounded rival (\$188 → \$927 per season); average and high are unchanged within noise. Most of v6.2's gain comes from the old v1.0 rival (+13% average, +7.5% high); over 17 scenarios including 5 replayed tournament rivals and 10 seeds, v6.2 earns +1.95% ± 0.23% more than v6.1 (ALGORITHM_CHANGES §18.4). This is a simulator with hand-chosen parameters, so treat it as a regression test rather than a forecast of tournament results.
+
+### 4.6 Ablation study: what each part is worth
+
+`python analytics/ablation_study.py` switches each part of `duopoly.py` off in turn (17 scenarios, 10 seeds × 30 seasons) and counts how often each guard changes the price:
+
+![Ablation study](imgs/ablation_study.png)
+
+* **Essential:** the high-rival ceiling (−13.5% without it) and the learned target curve (−1.8%).
+* **Small but positive:** late clearance, late cap under a high rival, behind-pace cap, regime classification, circuit breaker (0.2–0.6% each). Removed *together* they cost much more than the sum, so they stay.
+* **Trade-offs:** the price band around the rival, the \$18 floor, the low-demand test and the dumper holdout. Without them the simulator earns 1–3% more overall, but loses up to 16–23% in the low-demand market. Low-demand rounds were our worst real tournaments, so they stay.
+* The study found one bug: the circuit breaker undercut rivals priced above what customers would pay (\$201 per season in one scenario). v6.3 fixes it (+2.09% total vs v6.2, 10 / 10 seeds). Details: ALGORITHM_CHANGES §19.
 
 ---
 
@@ -489,7 +500,7 @@ Before submitting [`duopoly.py`](duopoly.py) to the DPC platform:
 - [x] Average execution latency well below the 0.2-second limit (~0.05 ms mean, ~12 ms worst case incl. the once-per-season regression refit).
 - [x] Memory usage within 512 MB.
 - [x] No unauthorized file system writes or terminal output logging.
-- [x] `python -m pytest` passes (26 tests).
+- [x] `python -m pytest` passes (27 tests).
 
 ### 5.2 Uploading to the DPC Platform
 
