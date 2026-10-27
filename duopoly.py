@@ -705,7 +705,7 @@ def _solve_closed_form_optimal_price(
     period: int,
     inventory_gap: float,
     required_burn_rate: float,
-    rival_recent_avg: float,
+    rival_price: float,
     state: Dict[str, Any]
 ) -> float:
     """
@@ -714,6 +714,7 @@ def _solve_closed_form_optimal_price(
     where B = β_p - β_diff (< 0) is the own-price slope and
           A = β₀ + C·p_rival + β_t·τ with rival slope C = β_diff (>= 0).
     Guards act on the identified quantities B and C directly.
+    rival_price is the rival's price from yesterday (v6.1 "A2"); the band is centred on it.
     """
     prior = REGIME_PRESETS_MLR["average_demand"]
     beta_0 = state.get("mlr_intercept", prior["intercept"])
@@ -722,7 +723,7 @@ def _solve_closed_form_optimal_price(
     beta_t = state.get("mlr_b_t", prior["b_t"])
 
     norm_t = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
-    A = beta_0 + C * rival_recent_avg + beta_t * norm_t
+    A = beta_0 + C * rival_price + beta_t * norm_t
 
     # Dynamic capacity shadow cost mu(t, c)
     is_low_wtp = state.get("detected_low_wtp", False)
@@ -733,7 +734,7 @@ def _solve_closed_form_optimal_price(
     # Margin-Preserving Undercut Boundary:
     max_cap = 8.50 if is_low_wtp else 7.50
     max_undercut = min(max_cap, 1.20 + 0.35 * max(0.0, inventory_gap - 1.5))
-    return float(np.clip(optimal_p, rival_recent_avg - max_undercut, rival_recent_avg + 12.0))
+    return float(np.clip(optimal_p, rival_price - max_undercut, rival_price + 12.0))
 
 
 def _apply_late_season_clearance(

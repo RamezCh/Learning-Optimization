@@ -40,7 +40,7 @@ def price_response_figure(path: str) -> None:
     ax = axes[1]
     pp = np.linspace(1, 9, 200)
     ax.plot(pp, 200 / pp ** 2, color=COLORS['warn'], linewidth=3, label='Elastic: d = 200/p² (ε = 2)')
-    ax.plot(pp, 80 / pp ** 0.4, color=COLORS['ours'], linewidth=3, linestyle='--', label='Inelastic: d = 80/p^0.4 (ε = 0.4)')
+    ax.plot(pp, 80 / pp ** 0.4, color=COLORS['ours'], linewidth=3, linestyle='--', label='Inelastic: d = 80/p⁰ˑ⁴ (ε = 0.4)')
     ax.set_title('2. Elastic vs inelastic demand')
     ax.set_xlabel('Price p ($)')
     ax.set_ylabel('Demand d(p) (units)')
@@ -83,7 +83,7 @@ def game_rules_figure(path: str) -> None:
     lam = np.array([market.get_arrival_rate(t) for t in days])
     ax.fill_between(days, lam, color=COLORS['warn'], alpha=0.15)
     ax.plot(days, lam, color=COLORS['warn'], linewidth=3, label=f'λ(t), total ≈ {lam.sum():.0f} arrivals/season')
-    ax.axvline(80, color=COLORS['rival'], linestyle='--', label='Late surge (days 80-100)')
+    ax.axvline(80, color=COLORS['rival'], linestyle='--', label='Late surge (days 80–100)')
     ax.set_title('2. Customer arrival intensity (shape random per simulation; level shown = simulator default)')
     ax.set_xlabel('Selling period (day)')
     ax.set_ylabel('Expected arrivals per day (whole market)')

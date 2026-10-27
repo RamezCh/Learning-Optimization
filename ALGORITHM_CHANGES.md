@@ -6,7 +6,7 @@ This document archives the complete iterative engineering progression of our aut
 - **`v3.0` Multi-Tier Adaptive Engine**: Cross-season demand modeling, targeted deep dumper counter-strategy (\$58 duopoly → \$64 monopoly), 5-tier archetype profiling, and follower defense.
 - **`v4` Master Architecture**: Deep dumper fallback circuit breaker (curing the \$0 trap), high-pricer ceiling guard (\$54 cap curing 40% seat spoilage), and empirical monopoly realignment (\$84/\$78/\$72/\$62).
 - **`v5.0` Master Architecture**: Universal low-sales circuit breaker (curing the \$27 dumper deadlock in `3d8tDh`), continuous dynamic anchor smoothing (\$35–\$44), monopoly yield curve calibration (\$52–\$56 sweet spot), unconditional late clearance at $t \ge 90$, and server 999.0 data hygiene.
-- **`v5.1` Master Architecture**: Dynamic WTP ceiling detection (curing the 201-seat monopoly loss in `3UmBuN`), smooth pacing undercutting (-$0.80 to -$1.20 preserving $49.50 ticket yield against $50.50 balanced rivals), late-season high-price counter-strategy against rivals spiking prices late (e.g. `ConvivialCrane` at $t \ge 85$), and closed-form econometric revenue optimization for regression variants.
+- **`v5.1` Master Architecture**: Dynamic WTP ceiling detection (curing the 201-seat monopoly loss in `3UmBuN`), smooth pacing undercutting (−\$0.80 to −\$1.20, preserving a \$49.50 ticket yield against \$50.50 balanced rivals), late-season high-price counter-strategy against rivals spiking prices late (e.g. `ConvivialCrane` at $t \ge 85$), and closed-form econometric revenue optimization for regression variants.
 - **`v6.0` Unified Econometric Engine**: closed-form MLR pricing, 3 demand-regime priors, fast in-season low-demand latch, high-rival ceiling guard (§16).
 - **`v6.1` Correctness release**: fixes four v6.0 bugs (phantom season, over-sensitive low-demand latch, constant monopoly price, rank-deficient regression), corrects the simulator's arrival scaling, and makes all figures reproducible from data (§17).
 - **`v6.2` Learned target curve**: the bend of the target curve is learned per market from the booking curves of past seasons with 75+ seats sold, starting from a prior per demand regime; +1.95% revenue in simulation (§18).
@@ -214,7 +214,7 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 
 * **Panel 1:** revenue and load factor per tournament, highlighting `35zapi` (\$0) and `3kGhWc` (\$168k).
 * **Panel 2 (`35zapi`):** v3.0 holds \$58 while `RussetBat` prices at \$4–\$16. The rival sold out in 72 of 100 seasons, typically only at period 98, and v3.0 sold nothing in the 2 remaining days at \$64.
-* **Panel 3 (`3kGhWc`):** `LoutishMacaque` sits at about \$66–\$71 all season. v3.0 prices \$61–\$67 just under it, sells about 3 seats in days 1–75, then ramps down to \$25 after day 75 and sells most of its seats in the last two weeks.
+* **Panel 3 (`3kGhWc`):** `LoutishMacaque` sits at about \$66–\$71 all season. v3.0 prices about \$62–\$68 (middle half of days) just under it, sells about 3 seats in days 1–75, then ramps down to \$25 after day 75 and sells most of its seats in the last two weeks.
 
 ### Vulnerability 1: The Zero-Revenue Holdout Blowout (`35zapi` $\to$ \$0.00)
 - In `35zapi`, `RussetBat` priced at ~\$12.00. Our algorithm classified them as `deep_dumper`.
@@ -224,8 +224,8 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 
 ### Vulnerability 2: High-Pricer "Dead Zone" & 40% Seat Spoilage (`3kGhWc` $\to$ \$168k)
 - In `3kGhWc`, `LoutishMacaque` posted high prices (~\$71.00).
-- Our algorithm anchored at ~\$68.00 and undercut by at most \$8.00, quoting **\$63–\$67**.
-- At \$63–\$67, customer demand was near zero in periods 1–75 (only 3 seats/season sold!).
+- Our algorithm anchored at ~\$68.00 and undercut by at most \$8.00, quoting mostly **\$62–\$68**.
+- At \$62–\$68, customer demand was near zero in periods 1–75 (only 3 seats/season sold!).
 - At period 75, with 77 unsold seats, the late anti-spoilage ramp panicked down to \$25.00.
 - **Result:** **40.1% of inventory (3,211 seats) spoiled unsold**, generating only \$167,914.
 
@@ -411,7 +411,7 @@ In Tournament Round 5 (40,000 periods across 4 matches), `v5.0` achieved a **100
 ### Two Structural Shifts in `data/v5` Demand:
 1. **Surging Market Potential / Arrival Rate**:
    - The Multiple Linear Regression intercept ($\beta_0$) jumped to **2.3255** (vs 0.3779 in `v4`).
-   - The Poisson arrival intercept ($\alpha_0$) rose to **+1.6388** (vs -0.7833 in `v4`).
+   - The Poisson arrival intercept ($\alpha_0$) rose to **+1.6388** (vs −0.7833 in `v4`).
    - Late-season arrival rates reached **1.005 passengers/period at $t=100$**.
 2. **Truncated WTP Ceiling (Budget/Leisure Only, Zero Business Segment)**:
    - In `data/v4`, customers purchased seats up to \$95–\$100 (converting 0.56 seats/period at \$80–\$90).
@@ -472,7 +472,7 @@ flowchart TD
 
 Evaluated across all 18 historical and synthetic matches (100 seasons each, 1,800 seasons per algorithm):
 
-| Scenario | Opponent | `v5.0` Master Revenue | `v5.1` Master Revenue | Net Gain ($) | `v5.0` Win | `v5.1` Win |
+| Scenario | Opponent | `v5.0` Master Revenue | `v5.1` Master Revenue | Net Gain (\$) | `v5.0` Win | `v5.1` Win |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Synthetic** | `Copycat` | \$147,587 | \$153,058 | +\$5,471 | WIN | WIN |
 | **Synthetic** | `AggressiveDumper` | \$170,473 | \$172,613 | +\$2,139 | WIN | WIN |

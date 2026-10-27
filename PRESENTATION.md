@@ -35,7 +35,7 @@ flowchart LR
 ```
 
 ### Our Original Naive Hypothesis (v1.0):
-> *"Why fight in the mud? Let's price high at \$85 early on, and \$105 late. The competitor will price cheap, sell all their 80 seats, and leave the market. Once they sell out, we will have a pure monopoly to sell our 80 seats at \$105 each ($80 \times \$105 = \$8,400 per flight)!"*
+> *"Why fight in the mud? Let's price high at \$85 early on, and \$105 late. The competitor will price cheap, sell all their 80 seats, and leave the market. Once they sell out, we will have a pure monopoly to sell our 80 seats at \$105 each (80 × \$105 = \$8,400 per flight)!"*
 
 It sounded brilliant on paper. In our first tournament, it proved to be an **absolute disaster**.
 
@@ -55,6 +55,8 @@ timeline
     v5.0 (The Ceiling Trap) : 3UmBuN WTP Wall : Customers refused $80+ in monopoly : 0% conversion rate
     v6.0 (The Drought) : Low sales in mlr / v5.1 : Unified 3-regime MLR + fast latch
     v6.1 (The Audit) : Code review found 4 bugs : Regime logic fixed, figures rebuilt from data
+    v6.2 (The Learned Plan) : Fixed target curve too early for late markets : Bend learned from 75+ seat seasons
+    v6.3 (The Ablation) : Every rule switched off and measured : Circuit-breaker bug fixed
 ```
 
 ### Failure 1: The Market Size Fallacy (v1.0 $\to$ 43,141 Spoiled Seats)
@@ -92,11 +94,12 @@ timeline
 To survive, we stopped relying on wishful thinking and built three foundational mathematical control concepts:
 
 ```text
-       OLD MISTAKE (v1 - v4)                          NEW SOLUTION (v5 - v6.1)
+       OLD MISTAKE (v1 - v4)                          NEW SOLUTION (v5 - v6.3)
   "Always wait for a monopoly"        ──►      "Continuously pace capacity against the Target Curve"
   "Rigid $58 holdout forever"         ──►      "Holdout with a safe deadline + in-season low-demand test"
   "Freeze when rival prices low"      ──►      "Dynamic floor ($18 vs $25) & volume breakers"
   "Follow expensive rivals up"        ──►      "Dynamic Ceiling Guard capping price at $26–$48"
+  "One fixed plan for every market"   ──►      "Plan learned from each market's booking curves"
 ```
 
 ---
@@ -177,7 +180,7 @@ $$\text{Inventory Gap}(t) = \text{Actual Remaining Seats}(t) - \text{Target Rema
 ### Why Master Wasn't Enough & Why Poisson-Logit Was Retired
 Our previous bot was stuck between two extremes:
 1. **The Heuristic Rule Forest:** Arbitrary step-ladders (e.g., if burn rate $\le 0.35 \implies \$92$; if $> 1.25 \implies \$52$) created artificial price cliffs and could not adapt dynamically to demand shocks.
-2. **Poisson-Logit Instability:** The experimental Poisson discrete-choice formulation suffered from numerical sigmoid saturation when price spreads widened, and its iterative grid search failed to scale within runtime constraints.
+2. **Poisson-Logit Instability:** The experimental Poisson discrete-choice formulation suffered from numerical sigmoid saturation when price spreads widened, and its iterative grid search failed to scale within runtime constraints. (These two reasons were not re-tested later; a direct comparison of MLR with a Poisson regression on our data is in ALGORITHM_CHANGES §17.5.)
 
 The breakthrough is our **Unified v6.0 Econometric Engine** in [`duopoly.py`](duopoly.py):
 - **Closed-Form Quadratic Revenue Optimization:** Computes the price that maximizes $(p - \mu)\cdot\hat d(p)$ under the fitted linear demand model in one step, $p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$, then keeps it within a band around the rival.
@@ -204,11 +207,12 @@ flowchart TD
 
     subgraph "Continuous Econometric Engine (MLR)"
         M1["Fit price-response plane (once per season):<br/>Demand = beta_0 + beta_p*p + beta_diff*(p_riv - p) + beta_t*tau"]
+        M0["Target plan (learned since v6.2):<br/>80*((1-c)*tau + c*tau^2), c from 75+ seat seasons"]
         M2["Compute Capacity Opportunity Shadow Cost:<br/>mu(t, c) = clip(26 - 16*(burn - 0.80) - 2.4*gap, 10 or 2, 56)"]
         M3["Closed-Form Quadratic Optimization:<br/>p* = (A - B*mu) / (2 * (-B))"]
     end
 
-    Input["New Day t (1..100)"] --> G1 --> M1 --> M2 --> M3 --> G2 --> G4 --> G3 --> Output["Optimal Continuous Ticket Price"]
+    Input["New Day t (1..100)"] --> G1 --> M1 --> M0 --> M2 --> M3 --> G2 --> G4 --> G3 --> Output["Optimal Continuous Ticket Price"]
 ```
 
 ### v6.3: switching every part off
@@ -251,7 +255,7 @@ Because $B < 0$ the objective is concave, so setting $\frac{d\Pi}{dp} = 0$ gives
 
 $$p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$$
 
-This is the optimum **of the model**, and the model is rough (test $R^2 \approx 0.15$). So the code keeps $p^*$ within \$7.50–\$8.50 below and \$12 above the rival's recent average, and in simulation that band decides the price about 40% of the time.
+This is the optimum **of the model**, and the model is rough (test $R^2 \approx 0.15$). So the code keeps $p^*$ in a band around the rival's price from yesterday (from \$1.20 below when on pace up to \$7.50–\$8.50 below when far behind, and at most \$12 above), and in simulation that band changes the price on about 60% of days.
 
 ---
 
@@ -307,7 +311,7 @@ streamlit run analytics/app.py
 Use this exact 5-slide script if presenting to a general audience, investors, or professors:
 
 ### Slide 1: The Perishable Seat Dilemma
-- **Visual:** Image of an airplane with empty seats labeled **"Value = $0.00"**.
+- **Visual:** Image of an airplane with empty seats labeled **"Value = \$0.00"**.
 - **The Hook:** *"Imagine running a grocery store where every unsold item disappears at midnight with zero refund. That is the airline business. You have 80 seats, 100 days, and a competitor across the hallway. If you price too high, your plane takes off empty. If you price too low, you sell out in two weeks and leave thousands of dollars on the table."*
 
 ### Slide 2: The Hall of Failures (Street Smarts Matter)
@@ -323,7 +327,7 @@ Use this exact 5-slide script if presenting to a general audience, investors, or
 - **The Breakthrough:** *"We distinguish between the Target Curve (the planned selling pace, slightly back-loaded for the late arrival surge) and the Booking Curve (actual sales). The gap between them moves the shadow value of a seat between its floor and \$56, which pushes prices down when we're behind and up when we're ahead."*
 
 ### Slide 5: The Scorecard & Live Day-by-Day Simulation
-- **Visual:** The multi-seed scorecard above and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
+- **Visual:** The multi-seed scorecard above, the ablation chart (`imgs/ablation_study.png`), and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
 - **Closing Punchline:** *"Every rule came from a real tournament failure, and every figure can be regenerated from 377,570 periods of tournament data or from the code itself. In the Streamlit studio you can watch each pricing decision day by day."*
 
 ---
@@ -332,8 +336,9 @@ Use this exact 5-slide script if presenting to a general audience, investors, or
 
 | Question | Simple 1-Sentence Answer |
 | :--- | :--- |
-| **"Why not just undercut the rival by \$1 every day?"** | *In our simulations that earns 30–60% less overall. It does about as well against a cheap dumper, which is why we follow cheap rivals too.* |
+| **"Why not just undercut the rival by \$1 every day?"** | *In our simulations that earns 35–65% less overall. It does about as well against a cheap dumper, which is why we follow cheap rivals too.* |
 | **"What is the difference between the Target Curve and the Booking Curve?"** | *The Target Curve is the planned, slightly back-loaded selling pace; the Booking Curve is the actual empirical sales trajectory.* |
 | **"Is the target curve still fixed?"** | *No: since v6.2 its bend is learned from the booking curves of this match's seasons with 75+ seats sold, starting from 0.15 in every market.* |
 | **"What happens if market demand is unexpectedly low?"** | *A statistical test runs during the season; once low demand is 99× more likely than normal (about 4% false alarms on past data), we unlock an \$18 floor and lower monopoly prices.* |
-| **"Why did you delete Poisson-Logit?"** | *Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; a linear model gives a closed-form price instantly, which is easy to explain and to guard.* |
+| **"Why linear regression and not a Poisson model?"** | *We tested both on each competition's own data: with ~25 seasons they are about equally accurate, but after one season (the first refit) the Poisson model's predictions explode, while the linear model stays stable and gives the price in one formula.* |
+| **"Do you need all those rules?"** | *We switched each one off and measured: two are essential, most are each worth under 1% but protect each other, and the test found one bug, fixed in v6.3 (+2.1%).* |

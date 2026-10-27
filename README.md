@@ -10,7 +10,7 @@ Dynamic pricing in perishable inventory systems combines consumer utility theory
 
 ### 1.1 Price-Response Function & Willingness to Pay (WTP)
 
-Let each customer arriving in the market have a reservation price (Willingness to Pay) $w \ge 0$, drawn from a cumulative distribution $F(w)$ with probability density $f(w)$ [2]. A customer purchases a seat at price $p$ if and only if their valuation exceeds the asking price:
+Let each customer arriving in the market have a reservation price (Willingness to Pay) $w \ge 0$, drawn from a cumulative distribution $F(w)$ with probability density $f(w)$ [2]. A customer purchases a seat at price $p$ if and only if their valuation is at least the asking price:
 
 $$d(p) = D \cdot \Pr(w \ge p) = D \cdot [1 - F(p)]$$
 
@@ -71,7 +71,7 @@ In airline revenue management, seats are strictly perishable: inventory cannot b
 
 $$p^*(t, c) = \arg\max_{p} \left[ (p - \mu(t, c)) \cdot d(p, t) \right]$$
 
-As remaining capacity $c$ diminishes relative to remaining periods $T - t$, the shadow price $\mu(t, c)$ escalates, justifying higher price thresholds to protect inventory for high-value business travelers arriving late in the season [2].
+As remaining capacity $c$ diminishes relative to remaining periods $T - t$, the shadow price $\mu(t, c)$ escalates, justifying higher prices to keep seats for the larger number of customers arriving late in the season [2]. (In our tournament data, late customers are more numerous but do not pay much more; see §1.5.)
 
 ### 1.5 Target Curve vs. Booking Curve vs. Capacity Utilization Curve
 
@@ -125,7 +125,7 @@ If an airline followed a naïve linear pace ($0.80$ seats/day):
 * At Day 50 ($\tau \approx 0.5$): Linear pace demands selling $80 \times 0.5 = \mathbf{40 \text{ seats}}$.
 * With $0.85\tau + 0.15\tau^2$: At Day 50 ($\tau = 0.5$):
   $$\text{TargetSold}(0.5) = 80 \cdot \left(0.85(0.5) + 0.15(0.25)\right) = 80 \cdot (0.425 + 0.0375) = 80 \cdot 0.4625 = \mathbf{37.0 \text{ seats}}$$
-The convex curve **deliberately holds back 3 to 4 extra seats in the first half of the season**. 
+The convex curve **deliberately holds back about 3 seats in the first half of the season**. 
 
 ##### C. Why $\tau^2$ (Convexity)?
 In the official DPC customer arrival process [3], arrival intensity $\lambda(t)$ **rises toward departure**. Our own data agree: in `data/v3` + `data/v4`, the seats *we* sold per period roughly double from about 0.4 on day 1 to about 0.9 around day 85 (see `imgs/regression_empirical_analysis.png`, Panel 3; rival sales are not observed, so total market arrivals cannot be measured directly).
@@ -157,7 +157,7 @@ $$\mu(t, c) = \operatorname{clip}\left(26 - 16 \cdot (\text{burn\_rate} - 0.80) 
 
 $$p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$$
 
-`duopoly.py` then clips $p^*$ to a band around the rival's recent average price: at most \$7.50–\$8.50 below it and at most \$12 above it. In simulation the band is binding in roughly 40% of periods, so the strategy is best described as *rival-relative pricing, steered by the demand model and the shadow cost*.
+`duopoly.py` then clips $p^*$ to a band around the rival's price from yesterday: from \$1.20 below it when on pace, widening to \$7.50 below (\$8.50 with low WTP) the further we fall behind, and at most \$12 above it. In simulation the band changes the price on about 60% of days (§4.6), so the strategy is best described as *rival-relative pricing, steered by the demand model and the shadow cost*.
 
 ##### Worked Example 1: Behind Pace (Low Utilization / Excess Unsold Seats)
 * **Situation at Day 50 ($t = 50, \tau \approx 0.50$):**
@@ -176,7 +176,7 @@ $$p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$$
   - **Outcome:** Lower price stimulates passenger demand, conversions accelerate, and sales catch up to the Target Curve.
 
 ##### Worked Example 2: Ahead of Pace (High Utilization / Inventory Scarcity)
-* **Situation at Day 65 ($t = 65, \tau \approx 0.65$):**
+* **Situation at Day 67 ($t = 67, \tau \approx 0.67$):**
   - Planned Target: $\text{TargetSold} \approx 51 \implies \text{TargetRemaining} = 29 \text{ seats}$.
   - Realized Sales: Airline has sold $58 \text{ seats} \implies \text{Actual Remaining } c = 22 \text{ seats}$.
   - Capacity Utilization: $\frac{58}{80} = 72.5\%$ (vs. planned $63.8\%$).
@@ -318,7 +318,7 @@ def p(
 ├────────────────────────────────┼───────────────────────────────────────┤
 │ Tier 2: Inter-Season Memory    │ `information_dump`                    │
 │                                │ Persists across seasons (1..100)      │
-│                                │ Reset to None between competitions   │
+│                                │ Reset to None between competitions    │
 ├────────────────────────────────┼───────────────────────────────────────┤
 │ Tier 3: Inter-Competition File │ `duopoly_feedback.data`               │
 │                                │ Persists across nightly match runs    │
@@ -398,7 +398,7 @@ flowchart TD
 | **4. Regime classification** | Re-evaluated at the end of **every** season: `low_demand` if the season sold < 42 seats (or no sales at ≥ \$55 in 4+ tries with < 60 seats); `high_demand` if the last two seasons averaged ≥ 72 seats with no sales at ≥ \$55; otherwise `average_demand`. Never permanent. | v6.0 latched low demand permanently, and counted a phantom 0-seat season at every season start. |
 | **5. In-season low-demand test** | SPRT on periods where we were cheaper than an in-stock rival at ≤ \$55 (see §4.2). Resets each season. | v6.0's "4 zero-sale days" rule fired in 44% of good seasons. |
 | **6. Monopoly pricing** | Band per regime (low \$28–\$44, average \$48–\$72, high \$50–\$66; skim price capped at \$60 if WTP looks truncated). Price falls linearly as the burn rate rises from 0.3 to 1.2. | v6.0 always returned the floor (\$46/\$50) because the band's top was below its floor. |
-| **7. Guards** | Cheap-rival floor, high-rival ceiling (\$26–\$48 when rival ≥ \$58), late-season rules, terminal clearance at $t \ge 90$, deep-dumper holdout with a safe deadline, two-season circuit breaker. | Situations where a linear demand model fitted on our own history is not trustworthy. |
+| **7. Guards** | Cheap-rival floor, high-rival ceiling (\$26–\$48 when rival ≥ \$58), late-season rules, terminal clearance at $t \ge 90$, deep-dumper holdout with a safe deadline, two-season circuit breaker (only against a rival under \$38, since v6.3). | Situations where a linear demand model fitted on our own history is not trustworthy. |
 
 ### 4.1 Regime priors
 
@@ -435,11 +435,11 @@ Low seasons in which we were never cheaper than the rival can't be detected in-s
 
 ### 4.3 High-rival ceiling guard
 
-When the rival's recent average is ≥ \$58, the price is capped at $\operatorname{clip}(46 - 1.5 \cdot \max(0,\text{gap}),\ 26,\ 48)$, in every regime. This stops the band-around-the-rival logic from following an expensive rival into prices few customers accept (the `3kGhWc` failure in v3.0, where pricing \$63–\$67 under a \$71 rival sold about 3 seats in days 1–75).
+When the rival's recent average is ≥ \$58, the price is capped at $\operatorname{clip}(46 - 1.5 \cdot \max(0,\text{gap}),\ 26,\ 48)$, in every regime. This stops the band-around-the-rival logic from following an expensive rival into prices few customers accept (the `3kGhWc` failure in v3.0, where pricing about \$62–\$68 under a \$71 rival sold about 3 seats in days 1–75).
 
 ### 4.4 Strategy figures
 
-![duopoly.py v6.2 strategy](imgs/dpc_strategy_visualization.png)
+![duopoly.py v6.3 strategy](imgs/dpc_strategy_visualization.png)
 
 *(Generated by `analytics/generate_strategy_visualization.py`.)*
 
@@ -457,7 +457,7 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 
 ![Learned target curve](imgs/learned_target_curve.png)
 
-*(Generated by `analytics/generate_learned_target_plot.py`.)* Left: average real booking curves of the seasons with 75+ seats in `3UmBuN` (books early) and `Gq2CUL` (books late), with the plan each one teaches (bend 0.01 and 0.82) and the old fixed plan (0.15). By day 50 the fixed plan expects 37 seats; `Gq2CUL` averaged 24 and still sold out. Right: the bend v6.2 uses season by season in the three simulated markets. In the low market it stays at 0.15 (no season reaches 75 seats); in the average and high markets it rises towards the 0.8 limit.
+*(Generated by `analytics/generate_learned_target_plot.py`.)* Left: average real booking curves of the seasons with 75+ seats in `3UmBuN` (books early) and `Gq2CUL` (books late), with the plan each one teaches (bend 0.01 and 0.82) and the old fixed plan (0.15). By day 50 the fixed plan expects 37 seats; `Gq2CUL` averaged 24 and still sold out. Right: the bend `duopoly.py` uses season by season in the three simulated markets. In the low market it stays at 0.15 (no season reaches 75 seats); in the average and high markets it rises towards the 0.8 limit.
 
 ### 4.5 Benchmark results (simulation)
 
@@ -494,7 +494,7 @@ Before submitting [`duopoly.py`](duopoly.py) to the DPC platform:
 - [x] Pricing function `p(...)` adheres to the exact signature and argument types.
 - [x] Output price is clipped to \$25.00–\$100.00 (floor \$18.00 once low demand is detected).
 - [x] Safely indexes row `0` (own price) and row `1` (rival price) of `prices_historical_in_current_season`.
-- [x] Actively persists cross-season competitor medians, EMA, and demand stats in `information_dump`.
+- [x] Persists cross-season state in `information_dump`: rival price history, EMA and per-season medians, sales per season, price-demand statistics, regression training data and coefficients, and the learned target-curve bend.
 - [x] Handles `None` inputs on period 1 (`prices_historical`, `demand_historical`).
 - [x] Handles period 101 gracefully to log end-of-season summaries without throwing exceptions.
 - [x] Average execution latency well below the 0.2-second limit (~0.05 ms mean, ~12 ms worst case incl. the once-per-season regression refit).
@@ -553,7 +553,7 @@ Below is an executive glossary defining key economic, revenue management, and co
 | Term | Plain-Language Definition | Practical Meaning in the Competition |
 | :--- | :--- | :--- |
 | **Dynamic Pricing** | The practice of adjusting prices in real time based on demand fluctuations, remaining time, and inventory levels. | Instead of charging one static fare, our algorithm continuously sets optimal prices for all 100 booking periods. |
-| **Target Curve** | The optimal benchmark depletion trajectory $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$ over time. | The planned selling pace; slightly convex, so it holds back up to 3 seats (mid-season) relative to a linear pace for the late arrival surge. |
+| **Target Curve** | The planned cumulative sales over time, $\text{TargetSold}(t) = 80 \cdot ((1-c)\tau + c\tau^2)$. | Starts with bend $c = 0.15$ (at most 3 seats behind a linear pace, at mid-season); since v6.2 the bend is learned from this market's seasons with 75+ seats sold. |
 | **Booking Curve** | The actual observed accumulation of ticket sales across the 100-day selling window. | Represents real customer conversion; compared continuously against the Target Curve to identify whether we are ahead or behind pace. |
 | **Capacity Utilization Curve** | The realized percentage of total aircraft capacity sold over time ($\text{Sold}(t) / 80$). | Measures load factor; remaining capacity $c(t) = 80 - \text{Sold}(t)$ determines vulnerability to seat spoilage or stockout. |
 | **Inventory Gap** | The difference between actual remaining capacity and target remaining capacity ($\text{Gap} = c(t) - \text{TargetRemaining}(t)$). | Positive gap means behind pace (prompts lower price to stimulate sales); negative gap means ahead of pace (prompts scarcity premium). |
@@ -562,7 +562,7 @@ Below is an executive glossary defining key economic, revenue management, and co
 | **Salvage Value** | The residual value of unsold stock after the sales period concludes. | In airline booking, salvage value is exactly \$0. Unsold inventory cannot be discounted or sold after departure. |
 | **Opportunity Cost / Shadow Price ($\mu$)** | The hidden economic cost of selling a seat today instead of reserving it for a potentially higher-paying buyer tomorrow. | Selling a seat early for \$35 carries an opportunity cost if a business traveler would have paid \$65 in period 90. |
 | **Poisson Arrival Process ($\lambda$)** | A standard statistical model describing how random events (customer arrivals) occur over time at an average rate $\lambda$. | Models passenger booking traffic, which starts as a slow trickle early on and escalates sharply in days 80–100. |
-| **Burn Rate** | The pace at which remaining seats must sell each day to completely sell out before departure. | Calculated as Remaining Capacity divided by Days Left. A burn rate above 1.2 indicates seats are selling too slowly. |
+| **Burn Rate** | The pace at which remaining seats must sell each day to completely sell out before departure. | Calculated as Remaining Capacity divided by Days Left. The even pace is 0.8 (80 seats in 100 days); a required burn rate of 1.2 or more means we must sell much faster than normal. |
 | **Safety Pacing Valve** | An automated algorithmic override that lowers prices if inventory is selling slower than the target trajectory. | Ensures inventory clears before period 100 without initiating an unnecessary price war earlier in the season. |
 
 ### 6.3 Duopoly Game & Technical Architecture
@@ -571,7 +571,7 @@ Below is an executive glossary defining key economic, revenue management, and co
 | :--- | :--- | :--- |
 | **Duopoly** | A market structure where exactly two commercial competitors supply the entire market. | Player A and Player B share all market arrivals; pricing decisions directly affect each other's sales volume. |
 | **Monopoly** | A market structure with only a single supplier and zero competing alternatives. | When a rival exhausts all 80 seats, we become the only seller. `duopoly.py` then prices inside a regime band (average demand \$48–\$72, high \$50–\$66, low \$28–\$44), higher when few seats remain per remaining day and lower when many do. |
-| **Price Dumping** | Aggressively undercutting prices to capture short-term volume at unsustainably low margins. | When a rival dumps tickets to extreme giveaway levels (≤ \$20, e.g., FuturisticSalamander at \$18), `duopoly.py` holds \$58 so the dumper sells out, but only until a safe deadline (enough days left to sell our seats) and only when demand is not low; otherwise it contests volume just below the dumper, down to \$18. |
+| **Price Dumping** | Aggressively undercutting prices to capture short-term volume at unsustainably low margins. | When a rival dumps tickets to extreme giveaway levels (≤ \$19.50, e.g., FuturisticSalamander at \$18), `duopoly.py` holds \$58 so the dumper sells out, but only until a safe deadline (enough days left to sell our seats) and only when demand is not low; otherwise it contests volume just below the dumper, down to \$18. |
 | **SPRT (Sequential Probability Ratio Test)** | A statistical test that keeps adding up evidence for one hypothesis against another and stops once one is much more likely. | Used in-season to decide whether we are in a low-demand market (see §4.2). |
 | **Selling Season** | One complete 100-day booking timeline for a single scheduled flight departure. | Each competition simulation repeats 100 seasons with identical market parameters, allowing cross-season learning. |
 | **Selling Period** | A single day or time step within the 100-day booking timeline. | There are 100 active periods plus period 101, which delivers final feedback from period 100. |

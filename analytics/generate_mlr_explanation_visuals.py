@@ -1,7 +1,7 @@
 """
 analytics/generate_mlr_explanation_visuals.py
 ---------------------------------------------
-Explanation figure for duopoly.py (v6.2). Every curve is computed with the functions and
+Explanation figure for duopoly.py (v6.3). Every curve is computed with the functions and
 constants inside duopoly.py, so the picture always matches the code:
 
 1. Panel 1: the "revenue hill" (p - mu) * (A + B*p) for the average-demand prior, with the
@@ -74,7 +74,7 @@ def generate_visuals(output_path: Optional[str] = None) -> str:
     ax.annotate(f'Day 50: target {target[49]:.1f} sold vs {linear[49]:.1f} linear',
                 xy=(50, target[49]), xytext=(8, 58), fontsize=9.5, color=COLORS['dark'],
                 arrowprops=dict(arrowstyle='->', color=COLORS['dark']))
-    ax.set_title('2. Target booking curve vs linear pace')
+    ax.set_title('2. Starting target curve (bend 0.15; learned per market since v6.2) vs linear pace')
     ax.set_xlabel('Selling period (day)')
     ax.set_ylabel('Cumulative seats sold')
     ax.legend(loc='lower right')

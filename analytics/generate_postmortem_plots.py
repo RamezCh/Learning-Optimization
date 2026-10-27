@@ -115,8 +115,8 @@ def v1_figure(out: str) -> None:
     plot_trajectory(axes[1], typical_season(df, '3XkNYY'), 'v1.0 vs ZealousMosquito (3XkNYY): fixed $85 / $105 schedule')
 
     ax = axes[2]
-    phases = [('Days 1-50', df.selling_period <= 50), ('Days 51-70', df.selling_period.between(51, 70)),
-              ('Days 71-100', df.selling_period >= 71)]
+    phases = [('Days 1–50', df.selling_period <= 50), ('Days 51–70', df.selling_period.between(51, 70)),
+              ('Days 71–100', df.selling_period >= 71)]
     total_cap = int(summary.capacity.sum())
     values = [int(df.loc[m, 'demand'].sum()) for _, m in phases] + [total_cap - int(df.demand.sum())]
     labels = [p for p, _ in phases] + ['Unsold (spoiled)']
@@ -144,7 +144,7 @@ def v3_figure(out: str) -> None:
     bar_revenue_load(axes[0], summary, f"v3.0: revenue and load factor per tournament\ntotal ${summary.revenue.sum():,.0f}",
                      {'35zapi': COLORS['warn'], '3kGhWc': COLORS['amber']})
     plot_trajectory(axes[1], typical_season(df, '35zapi'), 'v3.0 vs RussetBat (35zapi): $58 holdout vs a ~$12 rival')
-    plot_trajectory(axes[2], typical_season(df, '3kGhWc'), 'v3.0 vs LoutishMacaque (3kGhWc): undercutting a $71 rival')
+    plot_trajectory(axes[2], typical_season(df, '3kGhWc'), 'v3.0 vs LoutishMacaque (3kGhWc): undercutting a $66–$71 rival')
     plt.tight_layout()
     plt.savefig(out)
     plt.close()

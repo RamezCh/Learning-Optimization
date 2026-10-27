@@ -180,17 +180,17 @@ def main():
     # Parity Line (y = x)
     diag_line = np.linspace(20, 100, 100)
     ax1.plot(diag_line, diag_line, color=c_rose, linestyle='--', linewidth=2.0, label='Parity (Equal Price)')
-    ax1.plot(diag_line, diag_line - 1.0, color=c_emerald, linestyle=':', linewidth=2.2, label='Optimal Undercut (-$1.00)')
+    ax1.plot(diag_line, diag_line - 1.0, color=c_emerald, linestyle=':', linewidth=2.2, label='Undercut by $1 (rival − $1)')
     
     # Annotations explaining choice zones
-    ax1.annotate('High Demand Zone:\nUndercutting Competitor\n(d >= 2 seats)', 
+    ax1.annotate('Cheaper than rival:\nsales of 2+ seats\nper day are common', 
                  xy=(55, 48), xytext=(25, 78),
                  arrowprops=dict(facecolor=c_emerald, edgecolor=c_emerald, width=1.5, headwidth=6),
                  bbox=dict(boxstyle='round,pad=0.5', facecolor='#ecfdf5', edgecolor=c_emerald, alpha=0.9),
                  fontsize=9, fontweight='bold', color='#065f46')
                  
-    ax1.annotate('Dead Zone:\nPriced Above Rival\n(d ≈ 0 seats)', 
-                 xy=(35, 55), xytext=(65, 30),
+    ax1.annotate('Priced above rival:\nmostly 0 seats per day', 
+                 xy=(35, 55), xytext=(68, 37),
                  arrowprops=dict(facecolor=c_rose, edgecolor=c_rose, width=1.5, headwidth=6),
                  bbox=dict(boxstyle='round,pad=0.5', facecolor='#fff1f2', edgecolor=c_rose, alpha=0.9),
                  fontsize=9, fontweight='bold', color='#9f1239')
@@ -277,7 +277,7 @@ def main():
     # tau = (t-1)/99  ->  (80/99) * (0.85 + 0.30*tau) seats per period
     tau_smooth = (t_smooth - 1) / 99.0
     target_rate = (80.0 / 99.0) * (0.85 + 0.30 * tau_smooth)
-    ax3.plot(t_smooth, target_rate, color=c_emerald, linewidth=2.2, linestyle='--', label='Target sales rate implied by duopoly.py target curve')
+    ax3.plot(t_smooth, target_rate, color=c_emerald, linewidth=2.2, linestyle='--', label='Sales rate of the starting target curve (bend 0.15)')
 
     ax3.set_title('Panel 3: Our Sales per Period Over the Booking Window\n(our own sales only, v3 + v4; roughly doubles from day 1 to day 85)', fontsize=12, fontweight='bold', pad=10)
     ax3.set_xlabel('Selling Period (Day 1..100)', fontsize=10, fontweight='bold')

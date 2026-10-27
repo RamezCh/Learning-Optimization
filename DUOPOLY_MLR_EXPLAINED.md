@@ -88,9 +88,14 @@ Computers that use only math equations get fooled by irrational human competitor
 ### Scenario C: The High-Rival Dynamic Ceiling Guard
 * **The Situation:** In a low-demand market where customers won't pay more than \$35, RivalAir foolishly posts **\$72.00**.
 * **What a naive bot does:** Quotes \$65–\$68 because it's still cheaper than the rival. But passengers refuse to pay \$65, so nobody buys!
-* **What our Bouncer does:** Whenever the rival's recent average is \$58 or more, it caps our price at **\$26–\$48** (lower the further behind pace we are), in any market. Real lesson (v3.0, `3kGhWc`): pricing \$61–\$67 just under a \$71 rival sold only about 3 seats in days 1–75.
+* **What our Bouncer does:** Whenever the rival's recent average is \$58 or more, it caps our price at **\$26–\$48** (lower the further behind pace we are), in any market. Real lesson (v3.0, `3kGhWc`): pricing about \$62–\$68 just under a \$71 rival sold only about 3 seats in days 1–75.
 
-### Scenario D: Sold Out
+### Scenario D: The Circuit Breaker (Two Weak Seasons Against a Cheap Rival)
+* **The Situation:** We sold fewer than 42 seats in each of the last two seasons, and the rival keeps pricing cheap (recent average under \$38).
+* **What our Bouncer does:** It stops trusting the model and simply prices **\$0.50 under the rival** (a bit more when far behind pace), to win back volume. Real lesson (v4, `3d8tDh`): frozen at \$27 against a cheaper rival, we spoiled 4,342 seats.
+* **Why only against a cheap rival (v6.3):** Undercutting a rival priced \$40–\$70 in a market whose customers only pay up to \$48 means pricing above what anyone pays. We sold almost nothing, the weak seasons continued, and the breaker never switched off (\$201 per season in simulation). Since v6.3, against an expensive rival the normal model and the high-rival ceiling decide instead (\$917 per season).
+
+### Scenario E: Sold Out
 * **The Situation:** We sold our 80th seat on Day 82. We have 0 seats left.
 * **What our Bouncer does:** We post **\$130.00**. With no seats, the price can't earn or lose anything. A high number simply avoids giving a rival that copies our price a low anchor. (We have no evidence that this changed any rival's behaviour.)
 
@@ -101,14 +106,15 @@ Computers that use only math equations get fooled by irrational human competitor
 When there is no emergency, **The Economist** takes over. It uses **Multiple Linear Regression (MLR)**.
 
 ### What is Multiple Linear Regression?
-Think of it like a smart scale. We feed it 4 pieces of information every day:
-1. **Our Price ($p$):** If we raise price by \$1, demand goes down.
-2. **Rival's Price ($p_{\text{rival}}$):** If the rival gets expensive, passengers run to us.
-3. **The Price Difference ($p_{\text{rival}} - p$):** If we are \$1.50 cheaper, we capture $\sim 75\%$ of arriving passengers.
-4. **Time Left ($\tau$):** On Day 10, passengers are relaxed. On Day 95, travelers are desperate and buy quickly.
+Think of it like a smart scale. We feed it 3 pieces of information every day, together with how many seats we sold:
+1. **Our Price ($p$):** If we raise our price by \$1, fewer people buy from us.
+2. **The Price Difference ($p_{\text{rival}} - p$):** The cheaper we are than the rival, the more passengers choose us. (The rival's price itself is not a separate input: together with our own price it would only repeat the same information, which is why v6.1 removed it.)
+3. **Season Progress ($\tau$, 0 on day 1 and 1 on day 100):** More customers arrive close to departure, so demand rises with $\tau$.
 
 The computer fits a predictive equation:
-$$\text{Expected Passengers Today} = \text{Base Traffic} - (\text{Price Resistance} \times \text{Our Price}) + (\text{Gap Bonus} \times \text{Price Difference})$$
+$$\text{Expected Seats Sold Today} = \text{Base} + \text{Own-Price Slope} \times \text{Our Price} + \text{Gap Slope} \times \text{Price Difference} + \text{Time Slope} \times \tau$$
+
+The own-price slope is negative (higher price, fewer seats) and is kept at or below $-0.006$; the effect of a more expensive rival is kept at or above zero. The model is refit once per season on our latest 2,500 days of data.
 
 ---
 
@@ -127,7 +133,7 @@ To understand how our Economist paces the flight, keep these three concepts dist
 
 ### Why $\tau^2$ and Why $0.15$ in the Target Formula?
 
-Our planned Target Curve is:
+Our planned Target Curve starts as:
 $$\text{Target Cumulative Seats}(\tau) = 80 \times \left(0.85\tau + 0.15\tau^2\right), \quad \tau = \frac{\text{Day} - 1}{99}$$
 
 1. **Why not just a flat line ($80 \times \tau$)?**
@@ -143,6 +149,9 @@ $$\text{Target Cumulative Seats}(\tau) = 80 \times \left(0.85\tau + 0.15\tau^2\r
    - **85% ($0.85\tau$):** Gives a steady, reliable baseline of ticket sales so we don't fall too far behind.
    - **15% ($0.15\tau^2$):** Shifts sales a little later. At most it is 3 seats behind a linear pace (at mid-season), not 12. The value 0.15 was chosen by hand, not fitted.
    - At Day 100 ($\tau = 1$): $0.85(1) + 0.15(1)^2 = 1.00 \implies 80 \times 1.00 = \mathbf{80 \text{ seats}}$ (100% sold out!).
+4. **Since v6.2, 0.15 is only where we start.** Written with a "bend" $c$, the plan is $80 \times ((1-c)\tau + c\tau^2)$. Real markets book very differently: in one `v5` match customers came early ($c \approx 0.01$), in another very late ($c \approx 0.82$: only 24 seats sold by day 50, and still sold out). So after every season in which we sell **75 or more seats**, the algorithm measures that season's bend and averages it with the starting value 0.15, which counts like 3 seasons:
+   $$c = \frac{3 \times 0.15 + \text{sum of measured bends}}{3 + \text{number of such seasons}}, \quad \text{kept between 0 and 0.8}$$
+   In a late-booking market the plan therefore moves later, and being "behind" the old plan no longer triggers needless discounts. In simulation this earns about 2% more (see `imgs/learned_target_curve.png`).
 
 ---
 
@@ -160,7 +169,7 @@ $$\text{Inventory Gap} = \text{Our Remaining Seats} - \text{Target Remaining Sea
   - The price formula moves by half of that: about **\$6 lower** (unless the rival-relative band stops it).
   - **Result:** Bargain shoppers see the price drop, bookings pick up, and within a few days we are back on schedule!
 
-#### Story 2: Ahead of Pace (Selling Out Too Fast at Day 65)
+#### Story 2: Ahead of Pace (Selling Out Too Fast at Day 67)
 - **Target Plan:** We should have 29 seats left (51 sold).
 - **Reality:** We only have 22 seats left (58 sold!).
 - **Inventory Gap:** $22 - 29 = \mathbf{-7 \text{ seats ahead of pace}}$.
@@ -188,7 +197,7 @@ Because Revenue is a parabola (a smooth upside-down U-curve), calculus allows us
 
 $$p^* = \frac{A - B \cdot \mu}{2(-B)}$$
 
-The formula gives the price that maximizes expected (price − μ) × demand **under our fitted linear demand model**. The model is rough: per-day demand is mostly 0, 1 or 2 seats, and the fit explains only about 15% of the variation. So the code then keeps the price within a band around the rival (at most \$7.50–\$8.50 below, \$12 above). In simulation that band decides the price about 40% of the time.
+The formula gives the price that maximizes expected (price − μ) × demand **under our fitted linear demand model**. The model is rough: per-day demand is mostly 0, 1 or 2 seats, and the fit explains only about 15% of the variation. So the code then keeps the price within a band around the rival's price from yesterday: from \$1.20 below it when we are on pace, up to \$7.50 below (\$8.50 with low willingness to pay) when far behind, and at most \$12 above. In simulation that band changes the price on about 60% of days.
 
 ---
 
@@ -208,35 +217,28 @@ The regression starting values (priors) for each world come from pooled tourname
 
 ## 7. Concrete Walkthrough of a 100-Day Season
 
-````carousel
-### Phase 1: Days 1 to 15 (Probing & Profiling)
-```text
-Day 1: Plane is empty (80 seats). Rival posts $55.00.
-Action: We post $53.50 ($1.50 undercut).
-Goal: Probe market conversion. If high prices convert -> Regime 1. If not -> Regime 3.
-```
-<!-- slide -->
-### Phase 2: Days 16 to 50 (Dynamic Pacing Competition)
-```text
-Day 35: We have sold 28 seats (Target was 27). We are right on schedule!
-Action: MLR calculates optimal price $51.20 vs rival's $52.00.
-Goal: Smoothly capture healthy yield without panic-dumping.
-```
-<!-- slide -->
-### Phase 3: Days 51 to 75 (The Monopolist Harvest)
-```text
-Day 52: RivalAir ran out of seats! Server reports competitor_has_capacity = False.
-Action: Brain switches to Monopoly Mode. With 40 seats and 48 days left (0.83/day) the price is about $58; with fewer seats per day it rises toward $72.
-Goal: Pure profit harvest. Zero competition.
-```
-<!-- slide -->
-### Phase 4: Days 76 to 100 (Landing the Plane With Zero Waste)
-```text
-Day 92: We have 4 seats remaining. 9 days left.
-Action: Burn rate is low (4 seats / 9 days = 0.44 seats/day).
-Goal: In monopoly that burn rate gives about $68. Sell the final 4 seats before takeoff.
-```
-````
+The example below is a first season in a normal market, before anything has been learned (plan bend 0.15). Prices are illustrative.
+
+#### Phase 1: Days 1 to 15 (Starting Out)
+- **Day 1:** The plane is empty (80 seats). The rival posts \$55.00.
+- **Action:** The regression still uses the average-market starting values (the "prior"), and the price stays within the band around the rival, e.g. \$53.50.
+- **Meanwhile:** The low-demand alarm (Scenario B) checks every day on which we are cheaper than the rival.
+
+#### Phase 2: Days 16 to 50 (Pacing Against the Plan)
+- **Day 35:** We have sold 28 seats; the plan says 25. We are 3 seats ahead, so the seat value $\mu$ rises a little.
+- **Action:** The formula gives e.g. \$51.20 against the rival's \$52.00.
+- **Goal:** Sell steadily without panic discounts.
+
+#### Phase 3: Days 51 to 75 (The Rival Sells Out)
+- **Day 52:** The rival has no seats left (`competitor_has_capacity = False`).
+- **Action:** Monopoly mode. With 40 seats and 49 days left (0.82 seats per day) the monopoly price is about \$58; with fewer seats per day it rises toward \$72.
+
+#### Phase 4: Days 76 to 100 (Landing the Plane With No Empty Seats)
+- **Day 92:** 4 seats left, 9 days to go (0.44 seats per day).
+- **Action:** In monopoly that burn rate gives about \$68. If we were behind the plan instead, the late clearance discount would lower the price to avoid empty seats.
+
+#### After the Season (Day 101)
+- The server reports the season's sales. The regime is re-checked, the regression is refit, and if we sold 75+ seats, the season's booking curve updates the plan's bend for the next season.
 
 ---
 
@@ -261,7 +263,7 @@ If you have to present this project to professors, executives, or classmates who
 - **Talking Point:** *"We distinguish between the Target Curve (the planned convex benchmark that holds a few seats back for the late arrival surge) and the Booking Curve (actual sales). If actual sales fall behind target, the algorithm drops the opportunity cost of seats to accelerate bookings, so the flight lands with as few empty seats as possible."*
 
 ### Slide 5: The Scorecard & Live Day-by-Day Playback
-- **Visual:** The multi-seed benchmark table from `README.md` §4.5 (v6.1 earns 1.4–2.3× a naive "undercut by \$1" strategy in every simulated market) and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
+- **Visual:** The multi-seed benchmark table from `README.md` §4.5 (v6.3 earns 1.5–2.8× a naive "undercut by \$1" strategy in every simulated market), the ablation chart `imgs/ablation_study.png` from §4.6, and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
 - **Closing Punchline:** *"Every rule in our algorithm comes from a real tournament failure, and every number in our figures can be regenerated from the data. In the Streamlit app you can watch each pricing decision day by day."*
 
 ---
@@ -270,8 +272,9 @@ If you have to present this project to professors, executives, or classmates who
 
 | Question You Might Be Asked | Simple 1-Sentence Answer |
 | :--- | :--- |
-| **"Why not just undercut the rival by \$1 every day?"** | *"In our simulations that earns 30–60% less, because it gives away margin against expensive rivals and never sells at monopoly prices. (Against a cheap dumper it is competitive, which is why we follow cheap rivals too.)"* |
+| **"Why not just undercut the rival by \$1 every day?"** | *"In our simulations that earns 35–65% less, because it gives away margin against expensive rivals and never sells at monopoly prices. (Against a cheap dumper it is competitive, which is why we follow cheap rivals too.)"* |
 | **"What is the difference between the Target Curve and Booking Curve?"** | *"The Target Curve is the planned convex benchmark holding seats for late surges; the Booking Curve is actual cumulative sales over time."* |
 | **"What happens if demand is unexpectedly low?"** | *"A statistical test runs during the season. Once low demand is 99× more likely than normal demand (about 4% false alarms on past data), we unlock an \$18 floor and lower monopoly prices."* |
 | **"Why not use deep learning or a neural network?"** | *"Neural networks are black boxes that take thousands of rounds to learn; Multiple Linear Regression refits every season on the current competition and gives a price we can explain line by line."* |
-| **"Why did you delete Poisson-Logit?"** | *"Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; a linear model gives a closed-form price instantly, which is easy to explain and to guard."* |
+| **"Why linear regression and not a Poisson model?"** | *"We tested it on each competition's own data: with ~25 seasons both are about equally accurate, but after one season (when the model is first refit) the Poisson model's predictions explode. The linear model stays stable and gives the price in one formula (ALGORITHM_CHANGES §17.5)."* |
+| **"Do you need all those rules?"** | *"We switched each one off and measured: two are essential, most are each worth under 1% but protect each other, and the test found one bug, which v6.3 fixes (+2.1%)."* |

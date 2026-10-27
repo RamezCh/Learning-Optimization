@@ -70,9 +70,9 @@ SWITCHES = {
          "    if 'clearance' not in ABL and (inventory_gap > 2.5 or (period >= 90 and remaining_capacity >= 2)):\n"
          "        _hit('clearance')")]),
     'band': ('Price band around the rival', [
-        ("    return float(np.clip(optimal_p, rival_recent_avg - max_undercut, rival_recent_avg + 12.0))",
+        ("    return float(np.clip(optimal_p, rival_price - max_undercut, rival_price + 12.0))",
          "    if 'band' in ABL:\n        return float(optimal_p)\n"
-         "    clipped = float(np.clip(optimal_p, rival_recent_avg - max_undercut, rival_recent_avg + 12.0))\n"
+         "    clipped = float(np.clip(optimal_p, rival_price - max_undercut, rival_price + 12.0))\n"
          "    if clipped != optimal_p: _hit('band')\n    return clipped")]),
     'sprt': ('In-season low-demand test (SPRT)', [
         ("        if has_rival_capacity and my_prev_price <= 55.0 and latest_rival_price > my_prev_price:",
