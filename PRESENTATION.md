@@ -1,8 +1,8 @@
 # The Flight for Maximum Revenue: The Evolution of Our Dynamic Pricing Strategy
 ### Berliner Hochschule für Technik (BHT) — Learning Optimization (October 2026)
-**Authors:** SkyBlue Airlines AI Development Team  
+**Author:** Ramez Chreide  
 **Course:** Learning Optimization — Duopoly Pricing Challenge (DPC)  
-**Codebase:** [`duopoly.py`](duopoly.py) (Unified v6.0 MLR Engine) & [`analytics/app.py`](analytics/app.py) (Streamlit Simulation Studio)
+**Codebase:** [`duopoly.py`](duopoly.py) (v6.2 MLR Engine) & [`analytics/app.py`](analytics/app.py) (Streamlit Simulation Studio)
 
 ![Rule-Based MLR Strategy Overview](imgs/mlr_strategy_explained.png)
 
@@ -53,7 +53,8 @@ timeline
     v3.0 (The Stubborn Bot) : 35zapi Disaster : Rigidly held $58 against RussetBat : Sold 0 seats for 100 seasons ($0.00 rev)
     v4.0 (The Deadlock) : 3d8tDh SageSloth Freeze : Anchor froze at $27 : 4,342 seats spoiled
     v5.0 (The Ceiling Trap) : 3UmBuN WTP Wall : Customers refused $80+ in monopoly : 0% conversion rate
-    v6.0 (The Drought) : Macro Demand Shock : b0 collapsed to 0.21 : Unified 3-regime MLR + Fast Latch
+    v6.0 (The Drought) : Low sales in mlr / v5.1 : Unified 3-regime MLR + fast latch
+    v6.1 (The Audit) : Code review found 4 bugs : Regime logic fixed, figures rebuilt from data
 ```
 
 ### Failure 1: The Market Size Fallacy (v1.0 $\to$ 43,141 Spoiled Seats)
@@ -80,9 +81,9 @@ timeline
 * **The Result:** Passengers refused to buy. Over 245 monopoly periods, quoting $\ge \$80.00$ produced **0.0% conversion (100% zero demand)**, turning an uncontested monopoly into a self-inflicted disaster.
 
 ### Failure 6: The Low-Demand Macroeconomic Drought (`data/mlr` & `WB9uo7`)
-* **What Happened:** The simulator generated an extreme low-demand route where baseline arrival $\beta_0$ fell from $+2.12$ to $+0.21$. Total seasonal demand was only $\sim 40$ passengers across all 100 days!
-* **The Fatal Flaw:** The rival quoted $\$72.00$. Our legacy bot quoted $\$55.00$ (thinking it had an undercutting advantage). But customers refused to pay more than $\$30.00$! Quoting $\$55$ produced zero sales for 30 consecutive days.
-* **The Solution:** The Fast In-Season Low-Demand Latch and Dynamic Ceiling Guard: if 0 seats sell by Day 10 at $\$48–\$55$, latch immediately to low demand, ignore the high rival, and lock in the empirical sweet spot ($\$22–\$30$), generating **+3,289% revenue** vs \$72 rivals!
+* **What Happened:** In `data/mlr`, `data/v5.1` and `data/poisson_logit` our sales fell to 28–47 seats per season. In `WB9uo7`, the rival `RadiantMussel` priced around \$18.80, below our \$25 floor, and we sold **0 seats in 100 seasons**.
+* **The Fatal Flaw:** Our floor stopped us from contesting a rival priced below it, and we only adapted after whole seasons. (We only see our own sales, so we can't tell how much of this was low demand and how much was being undercut.)
+* **The Solution:** An \$18 floor once low demand is detected, an in-season statistical test for low demand, and a ceiling guard for the opposite case (rivals at \$58+).
 
 ---
 
@@ -91,9 +92,9 @@ timeline
 To survive, we stopped relying on wishful thinking and built three foundational mathematical control concepts:
 
 ```text
-       OLD MISTAKE (v1 - v4)                          NEW SOLUTION (v5 - v6.0)
+       OLD MISTAKE (v1 - v4)                          NEW SOLUTION (v5 - v6.1)
   "Always wait for a monopoly"        ──►      "Continuously pace capacity against the Target Curve"
-  "Rigid $58 holdout forever"         ──►      "Fast Day-10 low-demand latch & safe deadline"
+  "Rigid $58 holdout forever"         ──►      "Holdout with a safe deadline + in-season low-demand test"
   "Freeze when rival prices low"      ──►      "Dynamic floor ($18 vs $25) & volume breakers"
   "Follow expensive rivals up"        ──►      "Dynamic Ceiling Guard capping price at $26–$48"
 ```
@@ -103,19 +104,17 @@ To survive, we stopped relying on wishful thinking and built three foundational 
 ## 1. The Target Curve: The Optimal Benchmark Depletion Pace
 
 Why can't an airline just sell at a flat rate of $0.80$ seats per day ($80 \text{ seats} / 100 \text{ days}$)?
-Because **human booking behavior is not linear**:
-- **Days 1 to 40:** Leisure vacationers browse casually. Arrival volume is low ($\sim 0.4$ passengers/day).
-- **Days 75 to 100:** Business travelers and urgent flyers surge. Arrival volume accelerates ($\sim 2.0–2.5$ passengers/day).
+Because **customers do not arrive at a flat rate**: far more of them show up in the last weeks. In our own tournament data (`v3` + `v4`), the seats we sold per day roughly doubled from about 0.4 on day 1 to about 0.9 around day 85.
 
-If you sell $0.80$ seats/day early on, you are forced to discount tickets to bargain hunters on Day 15, leaving you with no seats left when high-paying corporate flyers arrive on Day 90!
+If you force a flat 0.80 seats/day from the start, you must price low early on and have fewer seats left for the busy final weeks. (Note: the data show *more* buyers late, not buyers who pay much more; over 99% of `v5` sales were at \$55 or less.)
 
 ```mermaid
 xychart-beta
     title "Target Curve: Why Convex Pacing (0.15t^2) Beats Flat Linear"
-    x-axis "Days Before Departure" [1, 20, 40, 60, 80, 100]
+    x-axis "Selling Day" [1, 20, 40, 60, 80, 100]
     y-axis "Cumulative Seats Sold" 0 --> 80
-    line "Target Curve: 80 * (0.85t + 0.15t^2)" [0, 14, 30, 47, 64, 80]
-    line "Naive Linear Pace: 0.80 seats/day" [0, 16, 32, 48, 64, 80]
+    line "Target Curve: 80 * (0.85t + 0.15t^2)" [0, 13.5, 28.7, 44.8, 61.9, 80]
+    line "Naive Linear Pace: 80 * t" [0, 15.4, 31.5, 47.7, 63.8, 80]
 ```
 
 ### The Target Curve Formula:
@@ -123,7 +122,19 @@ We model target cumulative sales using normalized progress $\tau = \frac{t - 1}{
 $$\text{Target Cumulative Sold}(\tau) = 80 \times \left(0.85\tau + 0.15\tau^2\right)$$
 
 - **The Linear Term ($0.85\tau$):** Establishes steady base pace.
-- **The Quadratic Term ($0.15\tau^2$):** Intentionally holds back $\approx 3–4$ extra seats during the first half of the season, preserving them for high-yield closing periods.
+- **The Quadratic Term ($0.15\tau^2$):** Holds back up to 3 seats compared with a linear pace (most at mid-season) for the late arrival surge. The value 0.15 was chosen by hand, not fitted.
+
+### v6.2: learning the plan from the market
+The tournament data showed that one fixed bend does not fit every market. Written with a bend $c$, the plan is $80 \times ((1-c)\tau + c\tau^2)$. In `data/v5`, `3UmBuN` booked almost in a straight line ($c \approx 0.01$), while `Gq2CUL` booked late ($c \approx 0.82$): by day 50 it had sold only 24 seats on average against the plan's 37, yet still sold out. Being "behind" the fixed plan made us discount for nothing.
+
+v6.2 therefore learns $c$ per match:
+1. After every season with **75+ seats sold** (high capacity utilization), fit that season's bend to its booking curve.
+2. Average these bends with a prior for the demand regime (low 0.67, average 0.19, high 0.60, from the old tournament data), the prior counting like 3 seasons: $c = (3\,c_{\text{prior}} + \sum c_i)/(3 + n)$, kept between 0 and 0.8.
+3. Until the first such season, keep 0.15.
+
+In simulation this earns **+1.95%** more than v6.1 (better in 10 of 10 seeds) at the same capacity utilization.
+
+![Learned target curve](imgs/learned_target_curve.png)
 
 ---
 
@@ -161,7 +172,7 @@ $$\text{Inventory Gap}(t) = \text{Actual Remaining Seats}(t) - \text{Target Rema
 
 ---
 
-# Act 4: The Climax — Unified Econometric Dynamic Pricing (v6.0)
+# Act 4: The Climax — Unified Econometric Dynamic Pricing (v6.0 → v6.2)
 
 ### Why Master Wasn't Enough & Why Poisson-Logit Was Retired
 Our previous bot was stuck between two extremes:
@@ -169,22 +180,31 @@ Our previous bot was stuck between two extremes:
 2. **Poisson-Logit Instability:** The experimental Poisson discrete-choice formulation suffered from numerical sigmoid saturation when price spreads widened, and its iterative grid search failed to scale within runtime constraints.
 
 The breakthrough is our **Unified v6.0 Econometric Engine** in [`duopoly.py`](duopoly.py):
-- **Closed-Form Quadratic Revenue Optimization:** Solves the exact profit-maximizing price summit in a single mathematical step: $p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$.
+- **Closed-Form Quadratic Revenue Optimization:** Computes the price that maximizes $(p - \mu)\cdot\hat d(p)$ under the fitted linear demand model in one step, $p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$, then keeps it within a band around the rival.
 - **Pruned the Rule Forest:** Eliminated arbitrary step-ladders, rigid undercutting tables, and micro-probing pulses.
-- **Retained Essential Guards:** Kept fast in-season low-demand detection, the high-rival dynamic ceiling guard, terminal clearance at $t \ge 90$, and dynamic floors (\$18 vs \$25).
+- **Retained Essential Guards:** Kept in-season low-demand detection, the high-rival dynamic ceiling guard, terminal clearance at $t \ge 90$, and dynamic floors (\$18 vs \$25).
+
+### v6.1: the audit
+A code review of v6.0 found that its regime logic collapsed to "always low demand" from mid-season 1 onward:
+1. A phantom 0-seat season was recorded at the start of every season, permanently latching low demand.
+2. The in-season latch ("4 zero-sale days while cheaper") fired in 44% of good seasons, because 4 empty days are normal early on. It was replaced by a statistical test (SPRT) with 4% false alarms on past data.
+3. The monopoly price was stuck at its floor (\$50) because of a sign error. It now falls smoothly with the burn rate inside a regime band.
+4. The regression's features were linearly dependent (`p_riv − p` next to `p` and `p_riv`). Only the identified slopes are used now.
+
+The simulator also ignored its arrival setting, so the "low-demand" benchmark actually had the most customers. With everything fixed, v6.1 matches v6.0 in average and high demand (+0.3% / −0.8%) and earns 9% more in low demand; see the scorecard below.
 
 ```mermaid
 flowchart TD
     subgraph "Essential Game-Theoretic Safeguards"
-        G1["Fast Low-Demand Latch:<br/>Day 10 zero sales at $48-$55<br/>or rival higher with 0 sales for 4d"]
-        G2["Dynamic Ceiling Guard:<br/>p_rival ≥ $58 in low demand<br/>-> Cap at $26.00 - $48.00"]
+        G1["In-season low-demand test (SPRT):<br/>while cheaper than rival at ≤ $55,<br/>latch when low demand is 99x more likely"]
+        G2["Dynamic Ceiling Guard:<br/>p_rival ≥ $58 (any regime)<br/>-> Cap at $26.00 - $48.00"]
         G3["Dynamic Operating Floor:<br/>Unlock $18.00 in low demand<br/>(prevents dumper lockout)"]
         G4["Terminal Clearance Safety Valve:<br/>t ≥ 90 & rem_cap ≥ 2 -> Discount to clear plane"]
     end
 
     subgraph "Continuous Econometric Engine (MLR)"
-        M1["Fit Dynamic Price-Response Plane:<br/>Demand = beta_0 + beta_p*p + beta_riv*p_riv + beta_diff*(p_riv - p) + beta_t*tau"]
-        M2["Compute Capacity Opportunity Shadow Cost:<br/>mu(t, c) = clip(base_mu - 14.0*(burn - 0.80) - 2.0*gap, min_mu, max_mu)"]
+        M1["Fit price-response plane (once per season):<br/>Demand = beta_0 + beta_p*p + beta_diff*(p_riv - p) + beta_t*tau"]
+        M2["Compute Capacity Opportunity Shadow Cost:<br/>mu(t, c) = clip(26 - 16*(burn - 0.80) - 2.4*gap, 10 or 2, 56)"]
         M3["Closed-Form Quadratic Optimization:<br/>p* = (A - B*mu) / (2 * (-B))"]
     end
 
@@ -196,57 +216,63 @@ flowchart TD
 ## The Mathematics of Unified MLR in Plain English
 
 ### 1. Estimating Customer Choice (The Demand Plane)
-Every day, our regression model evaluates 4 forces:
-$$\hat{d}(p) = \beta_0 + \beta_p \cdot p + \beta_{\text{rival}} \cdot p_{\text{rival}} + \beta_{\Delta} \cdot (p_{\text{rival}} - p) + \beta_t \cdot \tau$$
+Our regression model (refit once per season on the current competition) uses 3 forces:
+$$\hat{d}(p) = \beta_0 + \beta_p \cdot p + \beta_{\Delta} \cdot (p_{\text{rival}} - p) + \beta_t \cdot \tau$$
 
-- **Own-Price Elasticity ($\beta_p < 0$):** As our price rises, demand drops.
-- **Rival Price Sensitivity ($\beta_{\text{rival}}$):** As the rival gets expensive, passengers switch to us.
-- **The Undercutting Premium ($\beta_{\Delta} > 0$):** Being cheaper than the rival provides a decisive market share advantage.
+(v6.0 also included $p_{\text{rival}}$ on its own, but then the three price terms are linearly dependent and the individual coefficients can't be estimated.)
+
+- **Own price ($B = \beta_p - \beta_{\Delta} < 0$):** As our price rises, demand drops. The code requires $B \le -0.006$.
+- **Rival price ($C = \beta_{\Delta} \ge 0$):** As the rival gets more expensive, passengers switch to us.
 - **Time Trend ($\beta_t > 0$):** Arrival velocity accelerates as departure approaches.
 
 ### 2. The Capacity Opportunity Shadow Cost ($\mu$)
 In airline economics, **the cost of a seat is not what you paid to build it; it is what you give up by selling it today instead of tomorrow**:
 
-$$\mu(t, c) = \operatorname{clip}\left(\text{base\_}\mu - 14.0 \cdot (\text{burn\_rate} - 0.80) - 2.0 \cdot \text{inventory\_gap}, \; \mu_{\min}, \; \mu_{\max}\right)$$
+$$\mu(t, c) = \operatorname{clip}\left(26 - 16 \cdot (\text{burn\_rate} - 0.80) - 2.4 \cdot \text{inventory\_gap}, \; \mu_{\min}, \; 56\right), \quad \mu_{\min} = \$10 \; (\$2 \text{ under low WTP})$$
 
-- **Scarcity State (Few seats, lots of days):** $\mu = \$36–\$48$. The opportunity cost is high. We refuse to sell unless the customer pays top dollar.
-- **Surplus State (Many seats, few days):** $\mu$ drops toward **$\$2.00$**. Unsold seats will expire at $\$0.00$. The algorithm mathematically discounts fares to guarantee 100% capacity liquidation.
+- **Scarcity State (Few seats, lots of days):** $\mu$ rises toward \$56, pushing the price up.
+- **Surplus State (Many seats, few days):** $\mu$ drops to its floor. Unsold seats expire at \$0, so the algorithm discounts to reduce spoilage.
 
 ### 3. The Closed-Form Optimization Formula
 Net Surplus Revenue is quadratic:
 $$\Pi(p) = (p - \mu) \cdot \hat{d}(p) = (p - \mu) \cdot (A + B \cdot p)$$
-where $B = \beta_p - \beta_{\Delta} < 0$ and $A = \beta_0 + (\beta_{\text{rival}} + \beta_{\Delta}) \cdot p_{\text{rival}} + \beta_t \tau$.
+where $B = \beta_p - \beta_{\Delta} < 0$ and $A = \beta_0 + \beta_{\Delta} \cdot p_{\text{rival}} + \beta_t \tau$.
 
-Taking the derivative $\frac{d\Pi}{dp} = 0$ yields the **exact global revenue-maximizing price in one step**:
+Because $B < 0$ the objective is concave, so setting $\frac{d\Pi}{dp} = 0$ gives its maximum in one step:
 
 $$p^* = \frac{A - B \cdot \mu(t, c)}{2(-B)}$$
 
-*No trial-and-error, no step-ladders, no arbitrary thresholds.* The formula calculates the exact price summit every morning.
+This is the optimum **of the model**, and the model is rough (test $R^2 \approx 0.15$). So the code keeps $p^*$ within \$7.50–\$8.50 below and \$12 above the rival's recent average, and in simulation that band decides the price about 40% of the time.
 
 ---
 
-## The 3 Macroeconomic Passenger Worlds (377,570 Periods Analyzed)
+## The 3 Demand Regimes (377,570 duopoly periods, 7 data files)
 
-Different routes have completely different passenger volumes and price elasticities. Our model is retrained across all 13 tournament datasets into 3 distinct macroeconomic regimes:
+The regime is re-evaluated at the end of every season (v6.1; v6.0 latched it permanently):
 
-| Market Regime | Real-World Route Analogy | Valuations / WTP | Baseline Arrival ($\beta_0$) | Late Surge ($\beta_t$) | Optimal Ticket Sweet Spot | Dynamic Floor |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Low Demand** | Off-peak drought (`data/mlr`, `v5.1`) | Capped at **$\$35–\$45$** | $\beta_0 = 0.2145$ (Severe drought) | $\beta_t = 0.2931$ (Flatter surge) | **$\$22.00 – \$30.00$** | **$\$18.00$** |
-| **Average Demand** | Balanced route (`data/v3`, `v4`) | Up to **$\$92.00$** | $\beta_0 = 0.9696$ (Standard route) | $\beta_t = 0.3998$ (Moderate surge) | **$\$32.00 – \$44.00$** | **$\$25.00$** |
-| **High Demand** | Holiday rush (`data/v1`) | Up to **$\$115.00$** | $\beta_0 = 2.2329$ (High density) | $\beta_t = 0.8327$ (Violent late rush) | **$\$44.00 – \$52.00$** | **$\$28.00$** |
+| Regime | Detected when | Price floor | Monopoly band | Regression prior fitted on |
+| :--- | :--- | :---: | :---: | :--- |
+| **Low demand** | last season < 42 seats, or the in-season test fires | \$18 | \$28–\$44 | `data/mlr`, `v5.1`, `poisson_logit` |
+| **Average demand** | default | \$25 | \$48–\$72 | `data/v3`, `v4` |
+| **High demand** | last 2 seasons ≥ 72 seats on average, no sales at ≥ \$55 | \$25 | \$50–\$66 | `data/v1` |
+
+The priors are only used for roughly the first season; after that the model is refit on the current competition.
 
 ---
 
 # Act 5: The Empirical Scorecard & Streamlit Simulation Studio
 
-### 1. Multi-Regime Head-to-Head Performance (1,500 Simulation Seasons)
+### 1. Multi-seed simulation benchmark
 
-| Macroeconomic Regime | Win Rate (%) | Mean Revenue | Opponent Revenue | Revenue Advantage |
+`python analytics/benchmark_3regime_models.py` (3 simulated markets × 4 rivals × 5 seeds × 30 seasons; mean revenue per season, summed over rivals):
+
+| Simulated market | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
 | :--- | :---: | :---: | :---: | :---: |
-| **Low Demand (Off-Peak Drought)** | **88.9%** | **\$142.6k** | \$86.4k | **+65.0%** |
-| **Average Demand (Balanced Mix)** | **93.3%** | **\$264.8k** | \$182.1k | **+45.4%** |
-| **High Demand (Holiday Surge)** | **97.8%** | **\$388.2k** | \$249.5k | **+55.6%** |
-| **High Rival ($72.00) in Low-WTP** | **100.0%** | **\$136.4k** | \$4.1k | **+3,289%** |
+| Low (~68 arrivals, WTP \$20–\$48) | \$3,324 | **\$3,328** | \$3,035 | \$1,425 |
+| Average (~95 arrivals, WTP \$35–\$92) | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals, WTP \$25–\$78) | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
+
+*Earlier drafts listed 88.9%–97.8% win rates and "+3,289% vs a \$72 rival". No script in the repository reproduces those numbers, so they have been withdrawn.*
 
 ---
 
@@ -280,16 +306,16 @@ Use this exact 5-slide script if presenting to a general audience, investors, or
 - **The Story:** *"Our first bot was too naive: it tried to force a monopoly by holding high prices. But real competitors dumped prices at \$18, or arrival demand was too small, causing us to sell zero tickets for entire seasons. We realized that pure math without street-smart defense leads to commercial ruin."*
 
 ### Slide 3: The Unified Engine (Calculus Meets Common Sense)
-- **Visual:** Graphic of **The Safeguards** (Fast Latch, Dynamic Ceiling Guard) + **The Closed-Form MLR Engine**.
-- **The Concept:** *"Instead of clunky step-ladders or black-box neural networks, our algorithm solves the exact price summit mathematically using calculus: $p^* = \frac{A - B\mu}{2(-B)}$. Street-smart safeguards protect against predatory dumpers and overpriced rivals."*
+- **Visual:** `imgs/mlr_strategy_explained.png` (revenue hill, shadow cost, monopoly band) next to the safeguards.
+- **The Concept:** *"Instead of step-ladders or a black-box neural network, our algorithm uses calculus on a demand model it refits every season: $p^* = \frac{A - B\mu}{2(-B)}$. Because that model is rough, safeguards keep the price sensible against dumpers and overpriced rivals."*
 
 ### Slide 4: Target Curve vs. Booking Curve (Pacing the Flight)
 - **Visual:** Display **Panel 2 from `imgs/dpc_strategy_visualization.png`** (Target Curve vs Realized Booking Curve).
-- **The Breakthrough:** *"We distinguish between the Target Curve (the optimal planned depletion pace holding seats for late business travelers) and the Booking Curve (actual sales). The gap between them automatically adjusts the shadow value of remaining seats from \$48 down to \$2, guaranteeing the plane clears before takeoff."*
+- **The Breakthrough:** *"We distinguish between the Target Curve (the planned selling pace, slightly back-loaded for the late arrival surge) and the Booking Curve (actual sales). The gap between them moves the shadow value of a seat between its floor and \$56, which pushes prices down when we're behind and up when we're ahead."*
 
 ### Slide 5: The Scorecard & Live Day-by-Day Simulation
-- **Visual:** Display the benchmark scorecard (88.9%–97.8% win rates) and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
-- **Closing Punchline:** *"Across 377,000 real tournament periods, our unified pricing engine dominates across all demand regimes. With our interactive Streamlit studio, you can watch every pricing decision unfold day by day with total transparency."*
+- **Visual:** The multi-seed scorecard above and a screenshot of the **Streamlit Day-by-Day Simulation Studio**.
+- **Closing Punchline:** *"Every rule came from a real tournament failure, and every figure can be regenerated from 377,570 periods of tournament data or from the code itself. In the Streamlit studio you can watch each pricing decision day by day."*
 
 ---
 
@@ -297,7 +323,8 @@ Use this exact 5-slide script if presenting to a general audience, investors, or
 
 | Question | Simple 1-Sentence Answer |
 | :--- | :--- |
-| **"Why not just undercut the rival by \$1 every day?"** | *Because if the rival dumps at \$18, matching them guarantees bankruptcy; holding out lets them die first so you can harvest a \$70 monopoly.* |
-| **"What is the difference between the Target Curve and the Booking Curve?"** | *The Target Curve is the planned optimal convex pace designed to hold seats for late surges; the Booking Curve is the actual empirical sales trajectory.* |
-| **"What happens if market demand is unexpectedly low?"** | *Our Fast In-Season Latch diagnoses low demand by Day 10 if zero sales occur at \$48–\$55, dropping prices immediately to the \$22–\$30 sweet spot.* |
-| **"Why did you delete Poisson-Logit?"** | *Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; MLR solves the exact global optimum in closed form instantly.* |
+| **"Why not just undercut the rival by \$1 every day?"** | *In our simulations that earns 30–60% less overall. It does about as well against a cheap dumper, which is why we follow cheap rivals too.* |
+| **"What is the difference between the Target Curve and the Booking Curve?"** | *The Target Curve is the planned, slightly back-loaded selling pace; the Booking Curve is the actual empirical sales trajectory.* |
+| **"Is the target curve still fixed?"** | *No: since v6.2 its bend is learned from the booking curves of this match's seasons with 75+ seats sold, starting from a prior for the demand regime.* |
+| **"What happens if market demand is unexpectedly low?"** | *A statistical test runs during the season; once low demand is 99× more likely than normal (about 4% false alarms on past data), we unlock an \$18 floor and lower monopoly prices.* |
+| **"Why did you delete Poisson-Logit?"** | *Poisson-Logit suffered from sigmoid saturation during aggressive price spreads and required slow discrete grids; a linear model gives a closed-form price instantly, which is easy to explain and to guard.* |

@@ -1,159 +1,125 @@
 """
 analytics/generate_mlr_explanation_visuals.py
 ---------------------------------------------
-Generates intuitive, publication-quality infographics explaining Rule-Based MLR
-for non-technical audiences:
-1. Panel 1: The Demand & Revenue "Hill" (Why there is an optimal sweet-spot price).
-2. Panel 2: Target Curve vs Realized Booking Curve & Pacing (Convex benchmark vs linear).
-3. Panel 3: The Capacity Opportunity Cost (How scarcity shifts the sweet spot).
-4. Panel 4: The 3 Macroeconomic Regimes (Low Demand vs Average Demand vs High Demand).
+Explanation figure for duopoly.py (v6.2). Every curve is computed with the functions and
+constants inside duopoly.py, so the picture always matches the code:
+
+1. Panel 1: the "revenue hill" (p - mu) * (A + B*p) for the average-demand prior, with the
+   closed-form optimum p* = (A - B*mu) / (2*(-B)) and the band duopoly.py clips it to.
+2. Panel 2: target booking curve 80*(0.85*tau + 0.15*tau^2) vs a linear pace.
+3. Panel 3: capacity shadow cost mu(gap, burn rate) from _compute_capacity_shadow_cost.
+4. Panel 4: monopoly price vs required burn rate per regime from _calculate_monopoly_price.
+
+Saves output to: imgs/mlr_strategy_explained.png
 """
 
 import os
+import sys
+from typing import Optional
+
 import numpy as np
-import matplotlib.pyplot as plt
 
-def generate_visuals():
-    os.makedirs('imgs', exist_ok=True)
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), dpi=200)
-    fig.patch.set_facecolor('#ffffff')
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(ROOT_DIR)
+sys.path.append(os.path.join(ROOT_DIR, 'analytics'))
 
-    # Color Palette
-    c_blue = '#2563eb'
-    c_teal = '#0f766e'
-    c_amber = '#d97706'
-    c_rose = '#e11d48'
-    c_slate = '#475569'
+from plot_style import COLORS, apply_style, plt  # noqa: E402
+import duopoly  # noqa: E402
 
-    # -------------------------------------------------------------------------
-    # Panel 1: The Revenue Hill (Why Math Finds the Peak)
-    # -------------------------------------------------------------------------
-    ax1 = axes[0, 0]
-    ax1.set_facecolor('#f8fafc')
-    ax1.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
 
-    prices = np.linspace(15, 80, 200)
-    # Empirical demand function: d(p) = 1.05 - 0.015 * p
-    demands = np.maximum(0, 1.05 - 0.015 * prices)
-    revenue = (prices - 15) * demands  # Surplus revenue above baseline cost 15
-    p_opt = prices[np.argmax(revenue)]
-    rev_max = np.max(revenue)
+def generate_visuals(output_path: Optional[str] = None) -> str:
+    apply_style()
+    output_path = output_path or os.path.join(ROOT_DIR, 'imgs', 'mlr_strategy_explained.png')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig, axes = plt.subplots(2, 2, figsize=(16, 11.5))
 
-    ax1.plot(prices, revenue, color=c_blue, linewidth=3.5, label='Expected Surplus Revenue ($ per period)')
-    ax1.scatter([p_opt], [rev_max], color=c_rose, s=140, zorder=5)
-    ax1.axvline(p_opt, color=c_rose, linestyle=':', alpha=0.7)
+    # ------------------------------------------------------------------ Panel 1
+    ax = axes[0, 0]
+    prior = duopoly.REGIME_PRESETS_MLR['average_demand']
+    rival, gap, burn = 50.0, 0.0, 0.8
+    tau = (51 - 1) / 99.0  # day 51, exactly what _solve_closed_form_optimal_price uses
+    B, C = prior['B'], max(duopoly.MIN_RIVAL_SLOPE_C, prior['C'])
+    A = prior['intercept'] + C * rival + prior['b_t'] * tau
+    mu = duopoly._compute_capacity_shadow_cost(gap, burn, False)
+    prices = np.linspace(20, 110, 400)
+    demand = np.maximum(0.0, A + B * prices)
+    objective = (prices - mu) * demand
+    p_star = (A - B * mu) / (2.0 * (-B))
+    state = {'mlr_intercept': prior['intercept'], 'mlr_B': B, 'mlr_C': C, 'mlr_b_t': prior['b_t']}
+    p_used = duopoly._solve_closed_form_optimal_price(51, gap, burn, rival, state)
+    max_undercut = min(7.5, 1.20 + 0.35 * max(0.0, gap - 1.5))
 
-    ax1.annotate(f'Optimal Closed-Form Price: ${p_opt:.1f}\n(Max Revenue: ${rev_max:.1f}/period)',
-                 xy=(p_opt, rev_max), xytext=(p_opt + 4, rev_max - 2.5),
-                 arrowprops=dict(arrowstyle='->', color=c_rose, lw=2),
-                 fontsize=10, fontweight='bold', color=c_rose)
+    ax.plot(prices, objective, color=COLORS['accent'], linewidth=3, label='(p − μ) · expected demand(p)')
+    ax.axvspan(rival - max_undercut, rival + 12.0, color='#dcfce7', alpha=0.7,
+               label=f'Allowed band around rival: ${rival - max_undercut:.1f} to ${rival + 12:.0f}')
+    ax.axvline(p_star, color=COLORS['warn'], linestyle=':', linewidth=2, label=f'Unconstrained optimum p* = ${p_star:.2f}')
+    ax.axvline(p_used, color=COLORS['ours'], linewidth=2.4, label=f'Price after clipping = ${p_used:.2f} (inside band)')
+    ax.axvline(rival, color=COLORS['rival'], linestyle='--', linewidth=1.5, label=f'Rival price ${rival:.0f}')
+    ax.set_title('1. Closed-form price: maximise (p − μ)·(A + B·p)\n'
+                 f'average-demand prior, rival $50, day 51, on pace (μ = ${mu:.0f})')
+    ax.set_xlabel('Our price ($)')
+    ax.set_ylabel('Objective ($ per period)')
+    ax.legend(loc='lower center', fontsize=8.5)
 
-    ax1.annotate('Too Cheap ($18):\nHigh volume, but\ngiving away margin!',
-                 xy=(22, 4), xytext=(18, 9),
-                 arrowprops=dict(arrowstyle='->', color=c_slate), fontsize=9, color=c_slate)
-
-    ax1.annotate('Too Expensive ($65+):\nHigh margin, but\nseats fly empty!',
-                 xy=(62, 3), xytext=(55, 8),
-                 arrowprops=dict(arrowstyle='->', color=c_slate), fontsize=9, color=c_slate)
-
-    ax1.set_title('1. The Revenue Hill: Finding the Closed-Form Optimal Price', fontsize=12, fontweight='bold')
-    ax1.set_xlabel('Our Ticket Price ($)', fontsize=10, fontweight='bold')
-    ax1.set_ylabel('Expected Surplus Revenue ($ / period)', fontsize=10, fontweight='bold')
-    ax1.legend(loc='lower center', fontsize=9)
-
-    # -------------------------------------------------------------------------
-    # Panel 2: Target Curve vs Booking Curve (Depletion & Capacity Utilization)
-    # -------------------------------------------------------------------------
-    ax2 = axes[0, 1]
-    ax2.set_facecolor('#f8fafc')
-    ax2.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
-
+    # ------------------------------------------------------------------ Panel 2
+    ax = axes[0, 1]
     days = np.arange(1, 101)
-    tau = (days - 1) / 99.0
-    target_curve = 80 * (0.85 * tau + 0.15 * (tau ** 2))
-    linear_curve = 80 * tau
+    t = (days - 1) / 99.0
+    target = 80 * (0.85 * t + 0.15 * t ** 2)
+    linear = 80 * t
+    ax.plot(days, target, color=COLORS['ours'], linewidth=3, label='Target: 80·(0.85τ + 0.15τ²)')
+    ax.plot(days, linear, color=COLORS['rival'], linestyle='--', linewidth=2, label='Linear pace: 80·τ')
+    ax.fill_between(days, target, linear, color=COLORS['ours'], alpha=0.15,
+                    label='Seats held back vs linear (max 3 at day 50)')
+    ax.annotate(f'Day 50: target {target[49]:.1f} sold vs {linear[49]:.1f} linear',
+                xy=(50, target[49]), xytext=(8, 58), fontsize=9.5, color=COLORS['dark'],
+                arrowprops=dict(arrowstyle='->', color=COLORS['dark']))
+    ax.set_title('2. Target booking curve vs linear pace')
+    ax.set_xlabel('Selling period (day)')
+    ax.set_ylabel('Cumulative seats sold')
+    ax.legend(loc='lower right')
 
-    ax2.plot(days, target_curve, color=c_teal, linewidth=3.5, label='Target Curve (Optimal Planned Depletion)')
-    ax2.plot(days, linear_curve, color=c_slate, linestyle='--', linewidth=2, label='Naïve Linear Pace')
+    # ------------------------------------------------------------------ Panel 3
+    ax = axes[1, 0]
+    gaps = np.linspace(-15, 15, 300)
+    for burn_rate, style in [(0.5, '-'), (0.8, '--'), (1.2, ':')]:
+        mus = [duopoly._compute_capacity_shadow_cost(g, burn_rate, False) for g in gaps]
+        ax.plot(gaps, mus, color=COLORS['accent'], linestyle=style, linewidth=2.6,
+                label=f'Normal WTP, burn rate {burn_rate}')
+    mus_low = [duopoly._compute_capacity_shadow_cost(g, 0.8, True) for g in gaps]
+    ax.plot(gaps, mus_low, color=COLORS['amber'], linewidth=1.8, linestyle='-.', zorder=1,
+            label='Low WTP, burn rate 0.8 (same line, floor $2 instead of $10)')
+    ax.axvline(0, color=COLORS['rival'], linestyle=':')
+    ax.text(-14.5, 4, '← ahead of pace (scarce seats)', fontsize=9, color=COLORS['dark'])
+    ax.text(3, 14, 'behind pace (surplus seats) →', fontsize=9, color=COLORS['dark'])
+    ax.set_title('3. Shadow cost μ = clip(26 − 16·(burn − 0.8) − 2.4·gap, floor, 56)')
+    ax.set_xlabel('Inventory gap = remaining seats − target remaining')
+    ax.set_ylabel('μ ($ per seat)')
+    ax.legend(loc='upper right', fontsize=8.5)
 
-    ax2.fill_between(days, linear_curve, target_curve, color=c_teal, alpha=0.15, label='Late Seats Protected for Inelastic Surge')
-
-    ax2.annotate('Target Curve: TargetSold(t) = 80*(0.85τ + 0.15τ²)\nControls Capacity Utilization Pace',
-                 xy=(50, target_curve[49]), xytext=(10, 55),
-                 arrowprops=dict(arrowstyle='->', color=c_teal, lw=2),
-                 fontsize=9.5, fontweight='bold', color=c_teal)
-
-    ax2.set_title('2. Target Curve vs Realized Booking Pace (Pacing the Flight)', fontsize=12, fontweight='bold')
-    ax2.set_xlabel('Days of Season (1 to 100)', fontsize=10, fontweight='bold')
-    ax2.set_ylabel('Cumulative Seats Sold (Booking Pace)', fontsize=10, fontweight='bold')
-    ax2.legend(loc='lower right', fontsize=9)
-
-    # -------------------------------------------------------------------------
-    # Panel 3: Capacity Opportunity Cost (Shadow Price mu)
-    # -------------------------------------------------------------------------
-    ax3 = axes[1, 0]
-    ax3.set_facecolor('#f8fafc')
-    ax3.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
-
-    gaps = np.linspace(-10, 15, 100)
-    mu_normal = np.clip(28.0 - 1.8 * gaps, 12, 56)
-    mu_low_wtp = np.clip(22.0 - 2.2 * gaps, 2, 50)
-
-    ax3.plot(gaps, mu_normal, color=c_blue, linewidth=3, label='Standard Opportunity Cost mu(t, c)')
-    ax3.plot(gaps, mu_low_wtp, color=c_amber, linewidth=3, linestyle='-.', label='Low-Demand Opportunity Cost (Drops toward $2)')
-
-    ax3.axvline(0, color=c_slate, linestyle=':', alpha=0.7)
-    ax3.annotate('Ahead of Pace (Scarcity):\nRaise price, remaining seats are precious!',
-                 xy=(-5, 37), xytext=(-9, 44),
-                 arrowprops=dict(arrowstyle='->', color=c_blue), fontsize=9, color=c_blue)
-
-    ax3.annotate('Behind Pace (Surplus):\nDrop price, unsold seats spoil at takeoff!',
-                 xy=(8, 11), xytext=(3, 23),
-                 arrowprops=dict(arrowstyle='->', color=c_amber), fontsize=9, color=c_amber)
-
-    ax3.set_title('3. Opportunity Cost (Shadow Price): Scarcity vs Surplus', fontsize=12, fontweight='bold')
-    ax3.set_xlabel('Inventory Gap: RemainingSeats - TargetSeats (Behind [+] or Ahead [-])', fontsize=10, fontweight='bold')
-    ax3.set_ylabel('Opportunity Value per Seat ($)', fontsize=10, fontweight='bold')
-    ax3.legend(loc='upper right', fontsize=9)
-
-    # -------------------------------------------------------------------------
-    # Panel 4: The 3 Macroeconomic Demand Regimes (377,570 Periods)
-    # -------------------------------------------------------------------------
-    ax4 = axes[1, 1]
-    ax4.set_facecolor('#f8fafc')
-    ax4.grid(True, linestyle='--', alpha=0.5, color='#cbd5e1')
-
-    regimes = ['Low Demand\n(mlr, v5.1, poisson)',
-               'Average Demand\n(v3, v4 balanced)',
-               'High Demand\n(v1 holiday surge)']
-    baseline_arrivals = [0.21, 0.97, 2.23]
-    sweet_spots = [26.0, 38.0, 48.0]
-
-    x_pos = np.arange(len(regimes))
-    w = 0.35
-
-    b1 = ax4.bar(x_pos - w/2, [b * 30 for b in baseline_arrivals], w, label='Baseline Demand Arrival Rate (scaled)', color='#93c5fd', edgecolor='#1d4ed8')
-    b2 = ax4.bar(x_pos + w/2, sweet_spots, w, label='Optimal Sweet Spot Price ($)', color='#2563eb', edgecolor='#1e3a8a')
-
-    for idx, bar in enumerate(b1):
-        ax4.annotate(f"b0={baseline_arrivals[idx]:.2f}", xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
-                     xytext=(0, 2), textcoords="offset points", ha='center', fontsize=9, fontweight='bold', color='#1d4ed8')
-    for idx, bar in enumerate(b2):
-        ax4.annotate(f"${sweet_spots[idx]:.0f}", xy=(bar.get_x() + bar.get_width()/2, bar.get_height()/2),
-                     ha='center', fontsize=9, fontweight='bold', color='#ffffff', va='center')
-
-    ax4.set_title('4. The 3 Macroeconomic Regimes (377k Periods Empirical Analysis)', fontsize=12, fontweight='bold')
-    ax4.set_xticks(x_pos)
-    ax4.set_xticklabels(regimes, fontsize=9)
-    ax4.set_ylabel('Price Level / Scaled Arrival Rate', fontsize=10, fontweight='bold')
-    ax4.set_ylim(0, 95)
-    ax4.legend(loc='upper left', fontsize=9)
+    # ------------------------------------------------------------------ Panel 4
+    ax = axes[1, 1]
+    burns = np.linspace(0.0, 2.0, 200)
+    for regime, color in [('high_demand', COLORS['accent']), ('average_demand', COLORS['ours']),
+                          ('low_demand', COLORS['amber'])]:
+        st = {'detected_regime': regime, 'detected_low_wtp': regime == 'low_demand'}
+        ax.plot(burns, [duopoly._calculate_monopoly_price(b, 20, st) for b in burns],
+                color=color, linewidth=2.8, label=regime.replace('_', ' '))
+    st = {'detected_regime': 'average_demand', 'detected_low_wtp': True}
+    ax.plot(burns, [duopoly._calculate_monopoly_price(b, 20, st) for b in burns],
+            color=COLORS['ours'], linestyle='--', linewidth=2, label='average demand, truncated WTP (cap $60)')
+    ax.set_title('4. Monopoly price once the rival is sold out\n(high-demand band is lower: v5 buyers had WTP capped near $78)')
+    ax.set_xlabel('Required burn rate = remaining seats / remaining days')
+    ax.set_ylabel('Price ($)')
+    ax.set_ylim(20, 80)
+    ax.legend(loc='upper right')
 
     plt.tight_layout()
-    out_path = 'imgs/mlr_strategy_explained.png'
-    plt.savefig(out_path, bbox_inches='tight')
+    plt.savefig(output_path)
     plt.close()
-    print(f"Generated explanation chart at: {out_path}")
+    print(f"Saved explanation figure to: {output_path}")
+    return output_path
+
 
 if __name__ == '__main__':
     generate_visuals()

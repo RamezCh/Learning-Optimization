@@ -19,7 +19,6 @@ Calibrated against empirical DPC market mechanics:
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any, Callable
-import os
 
 
 class MarketDemandModel:
@@ -39,12 +38,19 @@ class MarketDemandModel:
         self.price_sensitivity = price_sensitivity
         self.rng = np.random.default_rng(seed)
 
-    def get_arrival_rate(self, t: int) -> float:
-        """Arrival rate lambda(t) accelerating toward departure period 100."""
+    def _arrival_shape(self, t: int) -> float:
+        """Unnormalised arrival profile: base level plus convex late surge."""
         progress = (t - 1) / 99.0
-        # Base arrival + convex late surge
-        intensity = 0.35 + 2.1 * (progress ** self.arrival_convexity)
-        return intensity
+        return 0.35 + 2.1 * (progress ** self.arrival_convexity)
+
+    def get_arrival_rate(self, t: int) -> float:
+        """
+        Arrival rate lambda(t) accelerating toward departure period 100.
+        Scaled so that the expected total arrivals over periods 1..100 equal avg_arrivals
+        (previously avg_arrivals was ignored and every market had ~105-126 arrivals).
+        """
+        total_shape = sum(self._arrival_shape(s) for s in range(1, 101))
+        return self.avg_arrivals * self._arrival_shape(t) / total_shape
 
     def sample_customer_wtp(self, n_arrivals: int, t: int) -> np.ndarray:
         """Sample customer reservation price (WTP) based on market segment mix."""
@@ -351,7 +357,7 @@ class SimulationResult:
         print(f" DPC TOURNAMENT EVALUATION: Our Algorithm vs {s['competitor'].upper()}")
         print(f" Official Ruling: {status_label}")
         print("="*72)
-        print(f" Official Metric (Total Revenue of 100 Seasons):")
+        print(" Official Metric (Total Revenue of 100 Seasons):")
         print(f"   Our Total Revenue:     ${s['our_total_revenue']:,.2f}")
         print(f"   Rival Total Revenue:   ${s['rival_total_revenue']:,.2f}")
         print(f"   Net Revenue Advantage: ${s['revenue_diff']:+,.2f} ({'+' if s['revenue_diff']>=0 else ''}{s['revenue_diff']/max(1,s['rival_total_revenue'])*100.0:.1f}%)")

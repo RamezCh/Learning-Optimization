@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.0 Unified).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.2).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -10,21 +10,31 @@ Architectural Overview:
    - low_demand:     β₀=0.2145, β_t=0.2931, sweet spot $22-$30, ceiling $36.
    - average_demand: β₀=0.9696, β_t=0.3998, sweet spot $32-$44, ceiling $60.
    - high_demand:    β₀=2.2329, β_t=0.8327, sweet spot $44-$52, ceiling $64.
-2. Fast In-Season & Cross-Season Low-Demand Detection:
-   - Day-10 Sweet-Spot Check: 0 sales at $48-$55 across 8+ days -> low_demand.
-   - Cheaper-than-Rival Lockout Check: 0 sales when cheaper than rival at <= $55 -> 100% low demand.
-   - Cross-Season Latch: Season 1 sales < 42 seats permanently latches low_demand across seasons 2..100.
+2. In-Season & Cross-Season Low-Demand Detection:
+   - In-season: sequential likelihood-ratio test (SPRT) on sales observed while we are
+     cheaper than the rival at <= $55. Flags low demand when the data are 99x more likely
+     under a low-demand rate than a normal rate (~4% false positives on v3/v4/v5 data).
+     The in-season flag resets every season.
+   - Cross-season: regime re-classified at the end of every season from that season's
+     sales (< 42 seats -> low_demand). Not permanent: a good season un-latches it.
 3. Closed-Form Marginal Revenue Optimization:
    Direct microeconomic first-order condition solution:
    p* = argmax_p [ (p - μ(t, c)) · (A + B·p) ] = (A - B·μ) / (2·(-B)).
-4. Continuous Capacity Opportunity Shadow Cost (μ):
+   Demand model: d = β₀ + β_p·p + β_diff·(p_rival - p) + β_t·τ  (features are linearly
+   independent; the old [p, p_rival, diff, τ] design had rank 3, not 4).
+4. Learned Target Curve (v6.2):
+   The target booking curve is 80 * ((1 - c)*tau + c*tau^2). Its bend c starts at 0.15 and,
+   after every season that sold >= 75 seats, is re-estimated from this match's own booking
+   curves, blended with a demand-group prior that counts as 3 seasons of evidence:
+       c = (3 * prior + sum(season bends)) / (3 + number of such seasons), clipped to [0, 0.8].
+5. Continuous Capacity Opportunity Shadow Cost (μ):
    Dynamic pacing without heuristic step-ladders:
    μ(t, c) smoothly discounts when behind schedule and extracts scarcity premium when ahead.
-5. Essential Game-Theoretic & Boundary Guardrails:
+6. Essential Game-Theoretic & Boundary Guardrails:
    - Monopoly Forcing vs Volume Contesting against deep dumpers.
    - High-Rival Dynamic Ceiling ($26-$48) preventing consumer dead zones.
    - Terminal Clearance Acceleration at t >= 90 (perishable $0 salvage value).
-   - Monotonicity & Elasticity Guard (B < -0.001).
+   - Monotonicity & Elasticity Guards: B <= -0.006, rival coefficient C >= 0.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -45,19 +55,52 @@ DEFAULT_NEUTRAL_PRICE: float = 65.0
 DEFAULT_RIVAL_PRICE: float = 50.0
 MIN_OBSERVATIONS_FOR_TRAINING: int = 80
 TRAINING_WINDOW_SIZE: int = 2500
+LOW_SALES_SEASON_THRESHOLD: int = 42
 
+# Identified demand-slope guards (see _solve_closed_form_optimal_price)
+MAX_OWN_SLOPE_B: float = -0.006   # own-price slope B must be at most this (demand falls with price)
+MIN_RIVAL_SLOPE_C: float = 0.0    # higher rival price must not reduce our demand
+
+# In-season low-demand SPRT (calibrated on data/v3, v4, v5 vs mlr, v5.1, poisson_logit):
+# normal sale rate when cheaper than rival at <= $55 is ~0.5 + 0.9*tau per period;
+# low-demand seasons convert at ~45% of that.
+SPRT_NORMAL_BASE: float = 0.5
+SPRT_NORMAL_SLOPE: float = 0.9
+SPRT_LOW_RATIO: float = 0.45
+SPRT_THRESHOLD: float = 4.6       # ln(99): latch when low demand is 99x more likely
+SPRT_FLOOR: float = -3.0          # cap accumulated evidence for "normal" so the test stays responsive
+SPRT_MIN_OBS: int = 8
+
+# Learned target curve (v6.2). Bend c of TargetSold(tau) = 80 * ((1 - c)*tau + c*tau^2).
+# Group priors = mean fitted bend of tournament seasons that sold >= 75 seats
+# (data/v3+v4: 0.19, data/v5: 0.60, data/mlr+v5.1+poisson_logit: 0.67).
+TARGET_C_DEFAULT: float = 0.15
+TARGET_C_PRIOR: Dict[str, float] = {"low_demand": 0.67, "average_demand": 0.19, "high_demand": 0.60}
+TARGET_PRIOR_WEIGHT: float = 3.0           # the prior counts like 3 seasons of evidence
+TARGET_C_MIN: float = 0.0
+TARGET_C_MAX: float = 0.8                  # never plan a more back-loaded season than this
+TARGET_LEARN_MIN_SOLD: int = 75            # only learn from seasons that (nearly) filled the plane
+
+# Regime priors. Only the identified combinations of the original 4-feature fits are kept:
+#   B = b_p - b_diff         (own-price slope of expected demand)
+#   C = b_riv + b_diff       (rival-price slope of expected demand)
+# These give exactly the same predictions as the original OLS fits.
+# The priors are used until MIN_OBSERVATIONS_FOR_TRAINING own observations exist.
+# "monopoly_band": (price at high burn rate, price at low burn rate) when the rival is sold out,
+# calibrated on monopoly-period conversion in data/v4 and data/v5 (revenue/period peaks at
+# $45-$55 and collapses above ~$70 in v5).
 REGIME_PRESETS_MLR: Dict[str, Dict[str, Any]] = {
     "low_demand": {
-        "intercept": 0.2145, "b_p": -0.0028, "b_riv": 0.0026, "b_diff": 0.0054, "b_t": 0.2931,
-        "sweet_spot": (22.0, 30.0), "max_price": 36.0, "avg_demand": 0.347
+        "intercept": 0.2145, "B": -0.0082, "C": 0.0080, "b_t": 0.2931,
+        "sweet_spot": (22.0, 30.0), "monopoly_band": (28.0, 44.0), "avg_demand": 0.347
     },
     "average_demand": {
-        "intercept": 0.9696, "b_p": -0.0093, "b_riv": -0.0014, "b_diff": 0.0079, "b_t": 0.3998,
-        "sweet_spot": (32.0, 44.0), "max_price": 60.0, "avg_demand": 0.477
+        "intercept": 0.9696, "B": -0.0172, "C": 0.0065, "b_t": 0.3998,
+        "sweet_spot": (32.0, 44.0), "monopoly_band": (48.0, 72.0), "avg_demand": 0.477
     },
     "high_demand": {
-        "intercept": 2.2329, "b_p": -0.0258, "b_riv": -0.0131, "b_diff": 0.0128, "b_t": 0.8327,
-        "sweet_spot": (44.0, 52.0), "max_price": 64.0, "avg_demand": 0.803
+        "intercept": 2.2329, "B": -0.0386, "C": 0.0, "b_t": 0.8327,
+        "sweet_spot": (44.0, 52.0), "monopoly_band": (50.0, 66.0), "avg_demand": 0.803
     }
 }
 # Backward-compatibility aliases
@@ -123,7 +166,8 @@ def p(
     inventory_gap = _calculate_inventory_gap(
         period,
         remaining_capacity,
-        state["total_capacity"]
+        state["total_capacity"],
+        state.get("target_c_now", TARGET_C_DEFAULT)
     )
 
     # 6. Pricing Decision Engine (Monopoly vs Duopoly Regimes)
@@ -164,13 +208,12 @@ def _initialize_or_get_state(
         "initialized": True,
         "total_capacity": DEFAULT_TOTAL_CAPACITY,
         "last_season_seen": current_season,
-        "training_history": [],            # Stores [p_our, p_rival, diff, norm_t, demand]
+        "training_history": [],            # Stores [p_our, p_rival - p_our, norm_t, demand]
         "mlr_model": None,                 # Fitted LinearRegression instance
-        "mlr_intercept": 0.9696,
-        "mlr_b_p": -0.0093,
-        "mlr_b_riv": -0.0014,
-        "mlr_b_diff": 0.0079,
-        "mlr_b_t": 0.3998,
+        "mlr_intercept": REGIME_PRESETS_MLR["average_demand"]["intercept"],
+        "mlr_B": REGIME_PRESETS_MLR["average_demand"]["B"],
+        "mlr_C": REGIME_PRESETS_MLR["average_demand"]["C"],
+        "mlr_b_t": REGIME_PRESETS_MLR["average_demand"]["b_t"],
         "rival_season_medians": [],
         "rival_recent_prices": [],
         "rival_profile": "balanced",
@@ -178,15 +221,18 @@ def _initialize_or_get_state(
         "rival_sold_out_seasons": 0,
         "failed_holdout_seasons": 0,
         "consecutive_low_sales": 0,
-        "consecutive_zero_sales_sweet_spot": 0,
-        "consecutive_zero_sales_cheaper": 0,
+        "low_demand_llr": 0.0,             # in-season SPRT log-likelihood ratio
+        "low_demand_obs": 0,               # number of SPRT observations this season
+        "low_demand_in_season": False,     # in-season SPRT verdict (reset each season)
         "my_last_price": DEFAULT_NEUTRAL_PRICE,
         "rival_last_price": DEFAULT_NEUTRAL_PRICE,
         "rival_ema_price": DEFAULT_NEUTRAL_PRICE,
         "price_demand_stats": {},
         "detected_low_wtp": False,
         "detected_low_demand": False,
-        "detected_regime": "average_demand"
+        "detected_regime": "average_demand",
+        "target_c_obs": [],                # fitted bend of each season that sold >= 75 seats
+        "target_c_now": TARGET_C_DEFAULT,  # bend used this season
     }
 
 
@@ -198,26 +244,25 @@ def _handle_season_transition(
     demand_history: Union[np.ndarray, List[int], None],
     state: Dict[str, Any]
 ) -> None:
-    """Updates sales history, classifies macroeconomic regime, and refits online MLR."""
-    prev_season_sales = _calculate_units_sold(demand_history)
-    state.setdefault("season_sales_history", []).append(prev_season_sales)
-    
-    state["consecutive_low_sales"] = (
-        state.get("consecutive_low_sales", 0) + 1 if prev_season_sales < 42 else 0
-    )
+    """
+    Resets per-season trackers at the first call of a new season.
 
-    # Cross-season latch: if Season 1 (or any season) had very low sales, permanently latch low_demand
-    if prev_season_sales < 42:
-        state["detected_low_demand"] = True
-        state["detected_low_wtp"] = True
-
-    _classify_and_update_regime(state)
-    _fit_online_regression(state)
+    Season bookkeeping (sales history, low-sales counter, regime, refit) happens only in
+    period 101 (_handle_end_of_season). In period 1 the server passes demand_history=None,
+    so counting a season here would record a phantom 0-sale season every season.
+    Fallback: if period 101 was never seen for the previous season, close it now without
+    recording sales (they are unknown) so the regime is still re-evaluated.
+    """
+    if state.get("last_closed_season") != state.get("last_season_seen"):
+        _classify_and_update_regime(state)
+        _fit_online_regression(state)
+        state["last_closed_season"] = state.get("last_season_seen")
 
     state["last_season_seen"] = new_season
     state["rival_recent_prices"] = []
-    state["consecutive_zero_sales_sweet_spot"] = 0
-    state["consecutive_zero_sales_cheaper"] = 0
+    state["low_demand_llr"] = 0.0
+    state["low_demand_obs"] = 0
+    state["low_demand_in_season"] = False
 
 
 def _handle_end_of_season(
@@ -239,18 +284,27 @@ def _handle_end_of_season(
             overall_med = float(np.median(state["rival_season_medians"]))
             state["rival_profile"] = "deep_dumper" if overall_med <= 20 else ("dumper" if overall_med <= 38 else "balanced")
 
+    # Period 101 can be called more than once defensively; close each season only once.
+    if state.get("last_closed_season") == state.get("last_season_seen"):
+        return DEFAULT_NEUTRAL_PRICE, state
+
     units_sold = _calculate_units_sold(demand_history)
     state.setdefault("season_sales_history", []).append(units_sold)
 
-    if units_sold < 42:
+    if units_sold < LOW_SALES_SEASON_THRESHOLD:
         state["consecutive_low_sales"] = state.get("consecutive_low_sales", 0) + 1
-        state["detected_low_demand"] = True
-        state["detected_low_wtp"] = True
     else:
         state["consecutive_low_sales"] = 0
 
+    if units_sold >= TARGET_LEARN_MIN_SOLD:
+        season_bend = _fit_season_target_bend(demand_history)
+        if season_bend is not None:
+            state.setdefault("target_c_obs", []).append(season_bend)
+
     _classify_and_update_regime(state)
     _fit_online_regression(state)
+    state["target_c_now"] = _current_target_bend(state)
+    state["last_closed_season"] = state.get("last_season_seen")
 
     return DEFAULT_NEUTRAL_PRICE, state
 
@@ -264,19 +318,17 @@ def _classify_and_update_regime(state: Dict[str, Any]) -> None:
     mid_high_buckets = [b for b in stats_dict.keys() if b >= 55]
     mid_high_periods = sum(stats_dict[b][1] for b in mid_high_buckets)
     mid_high_sales = sum(stats_dict[b][0] for b in mid_high_buckets)
-    rival_medians = state.get("rival_season_medians", [])
     sales_hist = state.get("season_sales_history", [])
     consec_low = state.get("consecutive_low_sales", 0)
-    is_low_demand_latched = state.get("detected_low_demand", False)
 
-    # 1. Low-Demand Regime:
-    # Triggered by: latched flag, zero sales at >= $55 across 4+ attempts, sales < 42, or rival <= $34
+    # 1. Low-Demand Regime (re-evaluated every season, never permanently latched):
+    # last season sold < 42 seats, or zero sales at >= $55 across 4+ attempts with weak volume.
+    # Rival price level is deliberately NOT used: a cheap rival is not evidence of low demand
+    # (and treating it as such disabled the deep-dumper holdout from season 2 on).
+    weak_volume = len(sales_hist) >= 1 and sales_hist[-1] < 60
     if (
-        is_low_demand_latched
-        or consec_low >= 1
-        or (mid_high_periods >= 4 and mid_high_sales == 0)
-        or (len(rival_medians) >= 1 and np.median(rival_medians) <= 34.0)
-        or (len(sales_hist) >= 2 and np.mean(sales_hist[-2:]) < 40.0)
+        consec_low >= 1
+        or (mid_high_periods >= 4 and mid_high_sales == 0 and weak_volume)
     ):
         state["detected_regime"] = "low_demand"
         state["detected_low_demand"] = True
@@ -295,15 +347,18 @@ def _classify_and_update_regime(state: Dict[str, Any]) -> None:
     # 3. Average / Standard Demand Regime (data/v4, data/v3, data/v1):
     else:
         state["detected_regime"] = "average_demand"
+        state["detected_low_demand"] = False
         state["detected_low_wtp"] = False
+
+    if state["detected_regime"] == "high_demand":
+        state["detected_low_demand"] = False
 
     preset = REGIME_PRESETS_MLR[state["detected_regime"]]
     # Apply prior weights if not enough online observations to fit
     if len(state.get("training_history", [])) < MIN_OBSERVATIONS_FOR_TRAINING:
         state["mlr_intercept"] = preset["intercept"]
-        state["mlr_b_p"] = preset["b_p"]
-        state["mlr_b_riv"] = preset["b_riv"]
-        state["mlr_b_diff"] = preset["b_diff"]
+        state["mlr_B"] = preset["B"]
+        state["mlr_C"] = preset["C"]
         state["mlr_b_t"] = preset["b_t"]
 
 
@@ -314,25 +369,31 @@ def _fit_online_regression(state: Dict[str, Any]) -> None:
         return
 
     try:
-        hist_data = np.array(history[-TRAINING_WINDOW_SIZE:])
-        feature_matrix = hist_data[:, :4]  # [p_our, p_rival, p_diff, norm_t]
-        target_demand = hist_data[:, 4]    # realized demand
+        hist_data = np.array(history[-TRAINING_WINDOW_SIZE:], dtype=float)
+        if hist_data.ndim != 2 or hist_data.shape[1] != 4:
+            return
+        feature_matrix = hist_data[:, :3]  # [p_our, p_rival - p_our, norm_t]  (full rank)
+        target_demand = hist_data[:, 3]    # realized demand
+
+        # Need actual price variation, otherwise the slopes are not identified.
+        if np.std(feature_matrix[:, 0]) < 0.5 or np.std(feature_matrix[:, 1]) < 0.5:
+            return
 
         model = LinearRegression(fit_intercept=True)
         model.fit(feature_matrix, target_demand)
 
-        # Monotonicity & Elasticity Guard:
-        # Own price sensitivity must be negative (B = beta_p - beta_diff < 0).
-        # If regression produces non-negative slope due to collinearity, fall back to regime prior.
-        b_p_candidate = float(model.coef_[0])
-        b_diff_candidate = float(model.coef_[2])
-        if (b_p_candidate - b_diff_candidate) < -0.001:
+        # d = b0 + b_p*p + b_diff*(r - p) + b_t*tau = (b0 + b_diff*r + b_t*tau) + (b_p - b_diff)*p
+        b_p, b_diff, b_t = (float(c) for c in model.coef_)
+        own_slope_B = b_p - b_diff
+        rival_slope_C = b_diff
+
+        # Monotonicity guard: demand must fall with our own price; otherwise keep the prior.
+        if own_slope_B < -0.001:
             state["mlr_model"] = model
             state["mlr_intercept"] = float(model.intercept_)
-            state["mlr_b_p"] = b_p_candidate
-            state["mlr_b_riv"] = float(model.coef_[1])
-            state["mlr_b_diff"] = b_diff_candidate
-            state["mlr_b_t"] = float(model.coef_[3])
+            state["mlr_B"] = own_slope_B
+            state["mlr_C"] = rival_slope_C
+            state["mlr_b_t"] = b_t
     except Exception:
         pass
 
@@ -382,9 +443,7 @@ def _update_real_time_signals(
     state: Dict[str, Any]
 ) -> None:
     """
-    Logs transactions, updates EMA, and applies Fast In-Season Low-Demand Rules:
-    1. Day-10 Sweet-Spot Zero-Sales Check ($48-$55 with 0 sales -> low demand).
-    2. Cheaper-than-Rival Zero-Sales Check (cheaper at <= $55 with 0 sales -> low demand).
+    Logs transactions, updates the rival EMA and runs the in-season low-demand SPRT.
     """
     if period <= 1 or prices_history is None:
         return
@@ -405,32 +464,18 @@ def _update_real_time_signals(
         current_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
         state["rival_ema_price"] = float(smoothing * latest_rival_price + (1.0 - smoothing) * current_ema)
 
-        # FAST IN-SEASON DETECTOR 1: Sweet-Spot Zero-Sales (e.g. at ~$55 with 0 demand)
-        if 48.0 <= my_prev_price <= 56.0 and last_demand == 0:
-            state["consecutive_zero_sales_sweet_spot"] = state.get("consecutive_zero_sales_sweet_spot", 0) + 1
-            if state["consecutive_zero_sales_sweet_spot"] >= 8:
-                state["detected_low_demand"] = True
-                state["detected_low_wtp"] = True
-                state["detected_regime"] = "low_demand"
-        elif last_demand > 0:
-            state["consecutive_zero_sales_sweet_spot"] = 0
+        # IN-SEASON LOW-DEMAND TEST (SPRT)
+        # Only periods where we were cheaper than an in-stock rival at <= $55 are informative:
+        # there, a normal market sells ~0.5 + 0.9*tau seats/period to us.
+        if has_rival_capacity and my_prev_price <= 55.0 and latest_rival_price > my_prev_price:
+            _update_low_demand_sprt(period, last_demand, state)
 
-        # FAST IN-SEASON DETECTOR 2: Cheaper-than-rival at <= $55 but 0 sales
-        # (If rival is higher, customers MUST choose us if they exist and WTP >= price)
-        if my_prev_price <= 55.0 and latest_rival_price > my_prev_price and last_demand == 0:
-            state["consecutive_zero_sales_cheaper"] = state.get("consecutive_zero_sales_cheaper", 0) + 1
-            if state["consecutive_zero_sales_cheaper"] >= 4:
-                state["detected_low_demand"] = True
-                state["detected_low_wtp"] = True
-                state["detected_regime"] = "low_demand"
-        elif last_demand > 0:
-            state["consecutive_zero_sales_cheaper"] = 0
-
-        # Log training observation [p_our, p_rival, p_diff, norm_t, demand]
+        # Log training observation [p_our, p_rival - p_our, norm_t, demand]
+        # (observation belongs to the previous period, period - 1)
         price_diff = latest_rival_price - my_prev_price
-        norm_t = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
+        norm_t = (period - 2) / float(TOTAL_SELLING_PERIODS - 1)
         state.setdefault("training_history", []).append([
-            my_prev_price, latest_rival_price, price_diff, norm_t, last_demand
+            my_prev_price, price_diff, norm_t, last_demand
         ])
 
         # Track price-demand conversion by bucket
@@ -441,24 +486,83 @@ def _update_real_time_signals(
         state["price_demand_stats"][bucket] = stats
 
 
+def _update_low_demand_sprt(period: int, last_demand: float, state: Dict[str, Any]) -> None:
+    """
+    Sequential probability ratio test: low-demand rate (45% of normal) vs normal rate.
+    Each informative period adds  d*ln(r_low/r_norm) - (r_low - r_norm)  to the log-likelihood
+    ratio. Latches the in-season low-demand flag once the ratio exceeds ln(99).
+    Replay on the tournament CSVs: ~4% false positives in seasons that sold >= 60 seats
+    (old 4-zero-day rule: ~44%).
+    """
+    tau = (period - 2) / float(TOTAL_SELLING_PERIODS - 1)
+    rate_normal = SPRT_NORMAL_BASE + SPRT_NORMAL_SLOPE * max(0.0, tau)
+    rate_low = SPRT_LOW_RATIO * rate_normal
+    increment = last_demand * np.log(rate_low / rate_normal) - (rate_low - rate_normal)
+    llr = max(SPRT_FLOOR, state.get("low_demand_llr", 0.0) + float(increment))
+    state["low_demand_llr"] = llr
+    state["low_demand_obs"] = state.get("low_demand_obs", 0) + 1
+
+    if llr > SPRT_THRESHOLD and state["low_demand_obs"] >= SPRT_MIN_OBS:
+        state["low_demand_in_season"] = True
+        state["detected_low_demand"] = True
+        state["detected_low_wtp"] = True
+        state["detected_regime"] = "low_demand"
+
+
 # -----------------------------------------------------------------------------
 # 4. Inventory Pacing Calculus
 # -----------------------------------------------------------------------------
 def _calculate_inventory_gap(
     current_period: int,
     remaining_capacity: int,
-    total_capacity: int
+    total_capacity: int,
+    bend: float = TARGET_C_DEFAULT
 ) -> float:
     """
-    Computes difference between actual inventory and target booking curve:
-    Target: 80 * (0.85*tau + 0.15*tau^2).
+    Computes difference between actual inventory and the target booking curve:
+    TargetSold(tau) = total_capacity * ((1 - bend)*tau + bend*tau^2), tau = (t - 1) / 99.
     Gap > 0: Behind pace (surplus unsold seats).
     Gap < 0: Ahead of pace (scarcity).
     """
-    progress = (current_period - 1) / float(TOTAL_SELLING_PERIODS)
-    target_depleted = total_capacity * (0.85 * progress + 0.15 * (progress ** 2))
+    progress = (current_period - 1) / float(TOTAL_SELLING_PERIODS - 1)
+    target_depleted = total_capacity * ((1.0 - bend) * progress + bend * (progress ** 2))
     target_remaining = total_capacity - target_depleted
     return float(remaining_capacity - target_remaining)
+
+
+def _fit_season_target_bend(
+    demand_history: Union[np.ndarray, List[int], None]
+) -> Optional[float]:
+    """
+    Least-squares bend c of one season's booking shape.
+    share_sold(tau) = seats sold before day t / seats sold in the season, fitted to
+    (1 - c)*tau + c*tau^2. Uses the shape, not the level, so a season that sold 76 seats and
+    one that sold 80 are comparable.
+    """
+    if demand_history is None:
+        return None
+    sales = np.asarray(demand_history, dtype=float)[:TOTAL_SELLING_PERIODS]
+    total = float(sales.sum())
+    if len(sales) < TOTAL_SELLING_PERIODS or total <= 0:
+        return None
+    share = np.concatenate([[0.0], np.cumsum(sales)[:-1]]) / total
+    tau = np.arange(TOTAL_SELLING_PERIODS) / float(TOTAL_SELLING_PERIODS - 1)
+    x = tau ** 2 - tau
+    return float(np.sum((share - tau) * x) / np.sum(x * x))
+
+
+def _current_target_bend(state: Dict[str, Any]) -> float:
+    """
+    Bend of the target curve for the next season.
+    - No season of this match has sold >= 75 seats yet: keep the default 0.15.
+    - Otherwise: blend the demand-group prior (weight 3) with this match's fitted bends.
+    """
+    observed = state.get("target_c_obs", [])
+    if not observed:
+        return TARGET_C_DEFAULT
+    prior = TARGET_C_PRIOR.get(state.get("detected_regime", "average_demand"), TARGET_C_DEFAULT)
+    bend = (TARGET_PRIOR_WEIGHT * prior + float(sum(observed))) / (TARGET_PRIOR_WEIGHT + len(observed))
+    return float(np.clip(bend, TARGET_C_MIN, TARGET_C_MAX))
 
 
 # -----------------------------------------------------------------------------
@@ -470,21 +574,24 @@ def _calculate_monopoly_price(
     state: Dict[str, Any]
 ) -> float:
     """
-    Solves monopoly pricing directly from detected regime sweet spot:
-    Eliminates discrete step-ladders with continuous burn-rate discounting.
+    Monopoly pricing once the rival is sold out.
+
+    Price falls linearly with the required burn rate (seats left per day left):
+      burn <= 0.30  -> top of the regime's monopoly band (few seats, plenty of time: skim)
+      burn >= 1.20  -> bottom of the band (many seats, little time: clear inventory)
+    Bands come from observed monopoly conversion (data/v4, data/v5): revenue per period
+    peaks around $45-$55 and conversion collapses above ~$70 when WTP is truncated.
     """
     regime = state.get("detected_regime", "average_demand")
     preset = REGIME_PRESETS_MLR.get(regime, REGIME_PRESETS_MLR["average_demand"])
-    p_low, p_high = preset["sweet_spot"]
-    p_floor = 46.0 if state.get("detected_low_wtp", False) else 50.0
+    p_low, p_high = preset["monopoly_band"]
 
-    # Scarcity bonus when capacity is nearly gone (<= 8 seats) and time remains
-    if remaining_capacity <= 8 and required_burn_rate <= 0.40:
-        return float(preset.get("max_price", p_high))
+    # Truncated willingness to pay (no sales observed at >= $55): cap the skim price.
+    if state.get("detected_low_wtp", False) and regime != "low_demand":
+        p_high = min(p_high, 60.0)
 
-    # Continuous burn-rate clearance discount
-    burn_discount = min(p_high - p_floor, 18.0 * max(0.0, required_burn_rate - 0.45))
-    return float(p_high - burn_discount)
+    pressure = float(np.clip((required_burn_rate - 0.30) / 0.90, 0.0, 1.0))
+    return float(p_high - pressure * (p_high - p_low))
 
 
 # -----------------------------------------------------------------------------
@@ -523,23 +630,23 @@ def _calculate_duopoly_price(
         return max(LOW_DEMAND_MIN_PRICE, min(latest_rival_price - 0.5, 24.0))
 
     # Branch 3: Closed-Form MLR Revenue Optimization: p* = (A - B*mu) / (2*(-B))
+    # The rival's price today is forecast with YESTERDAY's price (v6.1, "A2"): on the tournament
+    # logs it misses by $1.80 on average vs $2.31 for the 5-day average. The guardrails below keep
+    # the steadier 5-day average so that one unusual rival day cannot switch them on and off.
     target_price = _solve_closed_form_optimal_price(
         period,
         inventory_gap,
         required_burn_rate,
-        rival_recent_avg,
+        latest_rival_price,
         state
     )
 
-    # Guard 1: Anti-Dumping & Copycat Protection
+    # Guard 1: Cheap-Rival Floor
+    # Against a cheap rival (< $38) we follow just below it instead of holding a $35-$44 anchor:
+    # in data/v3-v5, pricing below a < $38 rival earned ~$40/period vs ~$15-$20/period when
+    # holding $2-$10 above it. The floor min(rival - 0.5, 28) stops a spiral to the bottom.
     if target_price < 38.0 and rival_recent_avg < 38.0:
-        if is_low_demand or consecutive_low_sales >= 2:
-            target_price = max(target_price, min(rival_recent_avg - 0.5, 28.0))
-        else:
-            target_price = max(
-                target_price,
-                float(np.clip(44.0 - 0.8 * max(0.0, inventory_gap - 1.5), 35.0, 44.0))
-            )
+        target_price = max(target_price, min(rival_recent_avg - 0.5, 28.0))
 
     # Guard 2: High-Price Ceiling Cap & High-Rival Dynamic Exploitation
     # When rival >= $58: never price in the dead zone! Cap at $26-$48 to sweep 100% of arrivals.
@@ -567,7 +674,7 @@ def _calculate_duopoly_price(
 
 
 def _get_recent_rival_average(state: Dict[str, Any], fallback: float) -> float:
-    """Returns average of the last 5 observed competitor prices."""
+    """Returns average of the last 5 observed competitor prices (used by the guardrails)."""
     recent = state.get("rival_recent_prices", [])
     if len(recent) > 0:
         return float(np.mean(recent[-5:]))
@@ -602,27 +709,24 @@ def _solve_closed_form_optimal_price(
     """
     Solves the quadratic surplus optimization problem:
     p* = argmax_p [ (p - μ(t, c)) · (A + B·p) ]
-    where B = β_p - β_diff (< 0) and A = β₀ + (β_riv + β_diff)·p_rival + β_t·τ.
+    where B = β_p - β_diff (< 0) is the own-price slope and
+          A = β₀ + C·p_rival + β_t·τ with rival slope C = β_diff (>= 0).
+    Guards act on the identified quantities B and C directly.
     """
-    beta_0 = state.get("mlr_intercept", 0.9696)
-    beta_p = min(-0.002, state.get("mlr_b_p", -0.0093))
-    beta_riv = state.get("mlr_b_riv", -0.0014)
-    beta_diff = max(0.004, state.get("mlr_b_diff", 0.0079))
-    beta_t = state.get("mlr_b_t", 0.3998)
+    prior = REGIME_PRESETS_MLR["average_demand"]
+    beta_0 = state.get("mlr_intercept", prior["intercept"])
+    B = min(MAX_OWN_SLOPE_B, state.get("mlr_B", prior["B"]))
+    C = max(MIN_RIVAL_SLOPE_C, state.get("mlr_C", prior["C"]))
+    beta_t = state.get("mlr_b_t", prior["b_t"])
 
-    # Aggregate demand slope B and intercept A
-    B = beta_p - beta_diff
     norm_t = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
-    A = beta_0 + (beta_riv + beta_diff) * rival_recent_avg + beta_t * norm_t
+    A = beta_0 + C * rival_recent_avg + beta_t * norm_t
 
     # Dynamic capacity shadow cost mu(t, c)
     is_low_wtp = state.get("detected_low_wtp", False)
     mu = _compute_capacity_shadow_cost(inventory_gap, required_burn_rate, is_low_wtp)
 
-    if B < -0.001:
-        optimal_p = (A - B * mu) / (2.0 * (-B))
-    else:
-        optimal_p = rival_recent_avg - 1.0
+    optimal_p = (A - B * mu) / (2.0 * (-B))
 
     # Margin-Preserving Undercut Boundary:
     max_cap = 8.50 if is_low_wtp else 7.50
@@ -641,10 +745,12 @@ def _apply_late_season_clearance(
 ) -> float:
     r"""
     Handles late clearance ($t \ge 75$):
-    - Exploits late price spikes by holding $46-$52 under low WTP.
+    - Exploits late rival price spikes by pricing just below them, capped at $52 (low WTP)
+      or $58 (normal WTP).
     - Accelerates clearance when inventory lags to prevent seat spoilage.
     """
-    late_cap = 52.0 if is_low_wtp else 72.0
+    # Late-season revenue per period vs rivals >= $54 falls above ~$58 (data/v3-v5).
+    late_cap = 52.0 if is_low_wtp else 58.0
     if rival_recent_avg >= 54.0 and required_burn_rate <= 1.15:
         return min(late_cap, rival_recent_avg - 2.0)
 

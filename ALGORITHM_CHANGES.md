@@ -1,12 +1,15 @@
-# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1`)
+# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1` → `v6.0` → `v6.1` → `v6.2`)
 
-This document archives the complete iterative engineering progression of our autonomous pricing algorithm, [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py), across six generations:
+This document archives the complete iterative engineering progression of our autonomous pricing algorithm, [`duopoly.py`](duopoly.py), across eight generations:
 - **`v1.0` Baseline**: The initial heuristic holdout strategy that failed due to flawed market size assumptions (89.9% seat spoilage, \$0 revenue in 4 of 6 tournaments).
 - **`v2.0` Overhaul**: Continuous inventory pacing $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$, EMA anchoring, and realistic empirical ceilings (\$25–\$100).
 - **`v3.0` Multi-Tier Adaptive Engine**: Cross-season demand modeling, targeted deep dumper counter-strategy (\$58 duopoly → \$64 monopoly), 5-tier archetype profiling, and follower defense.
 - **`v4` Master Architecture**: Deep dumper fallback circuit breaker (curing the \$0 trap), high-pricer ceiling guard (\$54 cap curing 40% seat spoilage), and empirical monopoly realignment (\$84/\$78/\$72/\$62).
 - **`v5.0` Master Architecture**: Universal low-sales circuit breaker (curing the \$27 dumper deadlock in `3d8tDh`), continuous dynamic anchor smoothing (\$35–\$44), monopoly yield curve calibration (\$52–\$56 sweet spot), unconditional late clearance at $t \ge 90$, and server 999.0 data hygiene.
 - **`v5.1` Master Architecture**: Dynamic WTP ceiling detection (curing the 201-seat monopoly loss in `3UmBuN`), smooth pacing undercutting (-$0.80 to -$1.20 preserving $49.50 ticket yield against $50.50 balanced rivals), late-season high-price counter-strategy against rivals spiking prices late (e.g. `ConvivialCrane` at $t \ge 85$), and closed-form econometric revenue optimization for regression variants.
+- **`v6.0` Unified Econometric Engine**: closed-form MLR pricing, 3 demand-regime priors, fast in-season low-demand latch, high-rival ceiling guard (§16).
+- **`v6.1` Correctness release**: fixes four v6.0 bugs (phantom season, over-sensitive low-demand latch, constant monopoly price, rank-deficient regression), corrects the simulator's arrival scaling, and makes all figures reproducible from data (§17).
+- **`v6.2` Learned target curve**: the bend of the target curve is learned per market from the booking curves of past seasons with 75+ seats sold, starting from a prior per demand regime; +1.95% revenue in simulation (§18).
 
 ---
 
@@ -31,9 +34,11 @@ In the first round of competition matches (60,000 total periods across 6 tournam
 
 ![v1.0 Tournament Performance and Flaws](imgs/v1_performance_and_flaws.png)
 
-* **Panel 1 (Revenue & Spoilage):** Highlights the devastating \$0.00 outcome in 4 out of 6 matches with near-100% seat spoilage across the board.
-* **Panel 2 (Rigid Phase Holdout):** Shows period-by-period price quoting in `3XkNYY` against `ZealousMosquito`, where rigid \$85 holding and inverted \$105 Phase 3 pricing forfeited sales to the rival.
-* **Panel 3 (Capacity Fate):** 43,141 out of 48,000 seats (89.9%) completely spoiled unsold at departure time.
+*(Rebuilt from `data/v1` by `analytics/generate_postmortem_plots.py`.)*
+
+* **Panel 1:** revenue and load factor per tournament; \$0 in 4 of 6.
+* **Panel 2:** a real season of `3XkNYY` against `ZealousMosquito`: v1.0's fixed \$85 / \$105 schedule sits above the rival's \$40–\$70 prices all season and sells nothing.
+* **Panel 3:** where all 48,000 seats went: 43,141 (89.9%) unsold.
 
 ---
 
@@ -153,10 +158,14 @@ def p(
 
 ![v2.0 Price Trajectory and Inventory Depletion](imgs/v2_trajectory_and_pacing.png)
 
+*(Historical output of the v2.0 code and the old simulator, which had ~110 arrivals per season regardless of settings. The v2.0 code is not in this repository, so this figure cannot be regenerated.)*
+
 * **Top Panel (Price Trajectory vs Rival):** Shows period-by-period dynamic undercutting tracking rival EMA with dynamic bounding below the empirical \$100 WTP ceiling.
-* **Bottom Panel (Inventory Depletion Pacing):** Tracks remaining seat capacity against the convex target depletion trajectory $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$, liquidating all 80 seats before period 100.
+* **Bottom Panel (Inventory Depletion Pacing):** Tracks remaining seat capacity against the convex target depletion trajectory $\text{TargetSold}(t) = 80 \cdot (0.85\tau + 0.15\tau^2)$, with 6 seats left unsold in the season shown.
 
 ![v2.0 Benchmark Comparison](imgs/v2_benchmark_comparison.png)
+
+*(Historical, same caveat as above. The "win rate" shown is the share of seasons won, not the official total-revenue metric.)*
 
 * **Left Panel (Revenue vs Competitors):** Demonstrates decisive 100-season revenue dominance against Copycat (\$180k), ZealousMosquito (\$295k), UncoveredElephant (\$288k), Old v1.0 Baseline (\$336k), and Bounded (\$302k).
 * **Right Panel (Win Rate & Load Factor):** High load factors (72%–92%) and 95%–100% win rates across all non-copycat match replays.
@@ -189,20 +198,22 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 
 | Tournament ID | Opponent | Total Revenue | Seats Sold | Load Factor | Seats Spoiled | Key Vulnerability Observed |
 | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| `PfqiTc` | `Winner_2023` | \$343,435.00 | 7,614 / 8,000 | 95.2% | 386 | Normal competitive duopoly |
-| `3Z9vTN` | `ScrupulousZebu` | \$311,019.00 | 7,642 / 8,000 | 95.5% | 358 | Normal competitive duopoly |
-| `RJ39At` | `Winner_2023` | \$304,125.00 | 7,590 / 8,000 | 94.9% | 410 | Normal competitive duopoly |
-| `442yCr` | `ScrupulousZebu` | \$300,555.00 | 7,631 / 8,000 | 95.4% | 369 | Normal competitive duopoly |
-| `JKuahN` | `RussetBat` | \$214,733.00 | 7,312 / 8,000 | 91.4% | 688 | Aggressive dumper |
+| `PfqiTc` | `Winner_2023` | \$343,435.00 | 7,913 / 8,000 | 98.9% | 87 | Normal competitive duopoly |
+| `3Z9vTN` | `ScrupulousZebu` | \$311,019.00 | 7,908 / 8,000 | 98.8% | 92 | Normal competitive duopoly |
+| `RJ39At` | `Winner_2023` | \$304,125.00 | 7,910 / 8,000 | 98.9% | 90 | Normal competitive duopoly |
+| `442yCr` | `ScrupulousZebu` | \$300,555.00 | 7,937 / 8,000 | 99.2% | 63 | Normal competitive duopoly |
+| `JKuahN` | `RussetBat` | \$214,733.00 | 7,208 / 8,000 | 90.1% | 792 | Aggressive dumper |
 | `3kGhWc` | `LoutishMacaque` | \$167,914.00 | 4,789 / 8,000 | 59.9% | **3,211** | **Vulnerability 2: High-Pricer Dead Zone (40.1% spoilage)** |
 | `35zapi` | `RussetBat` | **\$0.00** | **0 / 8,000** | **0.0%** | **8,000** | **Vulnerability 1: Zero-Revenue Holdout Blowout** |
-| **TOTAL** | — | **\$1,641,781.00** | **42,578 / 56,000** | **76.0%** | **13,422** | Over \$670,000 in potential revenue lost |
+| **TOTAL** | — | **\$1,641,781.00** | **43,665 / 56,000** | **78.0%** | **12,335** | Seat counts corrected from `data/v3` in v6.1 |
 
 ![v3.0 Tournament Vulnerabilities Post-Mortem](imgs/v3_vulnerabilities_postmortem.png)
 
-* **Panel 1 (data/v3 Tournament Revenue):** Revenue across all 7 tournaments, highlighting the complete \$0.00 collapse in `35zapi` and depressed revenue in `3kGhWc`.
-* **Panel 2 (The 35zapi Holdout Disaster):** Trajectory showing `v3.0` rigidly holding \$58 duopoly against `RussetBat` (~ \$12); when the rival sold out at period 98, remaining customer WTP was below the \$64 monopoly floor, yielding 0 sales across all 100 seasons.
-* **Panel 3 (The 3kGhWc High-Pricer Dead Zone):** Shows `v3.0` anchoring to high rival `LoutishMacaque` (~ \$71) and quoting \$63–\$67, where customer demand completely vanished (only 3 seats sold in periods 1–75), triggering a desperate late panic and spoiling 3,211 seats (40.1%).
+*(Rebuilt from `data/v3` by `analytics/generate_postmortem_plots.py`; trajectories are real seasons with typical revenue.)*
+
+* **Panel 1:** revenue and load factor per tournament, highlighting `35zapi` (\$0) and `3kGhWc` (\$168k).
+* **Panel 2 (`35zapi`):** v3.0 holds \$58 while `RussetBat` prices at \$4–\$16. The rival sold out in 72 of 100 seasons, typically only at period 98, and v3.0 sold nothing in the 2 remaining days at \$64.
+* **Panel 3 (`3kGhWc`):** `LoutishMacaque` sits at about \$66–\$71 all season. v3.0 prices \$61–\$67 just under it, sells about 3 seats in days 1–75, then ramps down to \$25 after day 75 and sells most of its seats in the last two weeks.
 
 ### Vulnerability 1: The Zero-Revenue Holdout Blowout (`35zapi` $\to$ \$0.00)
 - In `35zapi`, `RussetBat` priced at ~\$12.00. Our algorithm classified them as `deep_dumper`.
@@ -227,7 +238,7 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 
 ## 8. The `v4` Master Architecture
 
-[`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (v4) resolves every root cause from `data/v3`:
+[`duopoly.py`](duopoly.py) (v4) resolves every root cause from `data/v3`:
 
 ```mermaid
 flowchart TD
@@ -327,9 +338,11 @@ In Tournament Round 4 (60,000 periods across 6 tournaments), `v4` propelled us u
 
 ![v4 Tournament Round 4 Post-Mortem](imgs/v4_round4_postmortem.png)
 
-* **Panel 1 (Round 4 Performance):** Cumulative tournament revenue and load factor across all 6 matches, showing stellar ~95%–100% load factors in 5 matches, dragged down solely by the `3d8tDh` outlier.
-* **Panel 2 (The 3d8tDh Dumper Deadlock):** Real-time trajectory against `SageSloth` (~ \$25.80): `v4` snapped anchor to \$35 and undercut down to the \$27.00 floor. Because `SageSloth` never reached 80 sales, our algorithm remained frozen at \$27.00 for all 100 seasons, spoiling 4,342 seats.
-* **Panel 3 (Spoilage Attribution):** Pie chart illustrating that `3d8tDh` alone accounted for **74.6% of all spoiled inventory** (4,342 out of 5,818 seats) in the entire round.
+*(Rebuilt from `data/v4` by `analytics/generate_postmortem_plots.py`.)*
+
+* **Panel 1:** revenue and load factor per tournament: 92–100% load in 5 matches, 45.7% in `3d8tDh`.
+* **Panel 2 (`3d8tDh`):** a typical real season against `SageSloth` (median rival price \$25.20): v4 follows the rival down and then sits at \$27 from about day 33 while the rival stays at \$22–\$26; the season sells 37 seats.
+* **Panel 3:** unsold seats per tournament: `3d8tDh` accounts for 4,342 of 5,818 (74.6%).
 
 ### Key Diagnostic Findings from `data/v4`:
 1. **The \$27.00 Dumper Deadlock (`3d8tDh` → -\$195k Loss)**:
@@ -348,7 +361,7 @@ In Tournament Round 4 (60,000 periods across 6 tournaments), `v4` propelled us u
 
 ## 12. The `v5.0` Master Architecture
 
-[`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (`v5.0`) incorporates four critical engineering upgrades:
+[`duopoly.py`](duopoly.py) (`v5.0`) incorporates four critical engineering upgrades:
 
 ```mermaid
 flowchart TD
@@ -421,7 +434,7 @@ In Tournament Round 5 (40,000 periods across 4 matches), `v5.0` achieved a **100
 
 ## 14. The `v5.1` Master Architecture
 
-[`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) (`v5.1`) incorporates targeted algorithmic upgrades addressing all empirical findings from `data/v5`:
+[`duopoly.py`](duopoly.py) (`v5.1`) incorporates targeted algorithmic upgrades addressing all empirical findings from `data/v5`:
 
 ```mermaid
 flowchart TD
@@ -448,9 +461,9 @@ flowchart TD
    - For small gaps ($1–3$ seats), undercuts by only $\$0.80–\$1.20$, maintaining a **\$49.50–\$50.00 ticket yield** against $\$50.50$ balanced rivals instead of premature dumping at $\$45.00$.
 3. **Late-Season High-Rival Counter-Pricing (`ConvivialCrane`)**:
    - When $t \ge 75$ and rival EMA $\ge \$54.00$ with required burn rate $\le 1.15$, caps asking price at $\min(\$54.00, \text{RivalEMA} - 2.0)$ rather than clearance dumping down to $\$32.00$.
-4. **Econometric Regression Upgrades across Variants**:
-   - [`duopoly_mlr.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly_mlr.py): Solves closed-form optimal pricing directly from fitted OLS slopes: $p^* = \frac{A - B \cdot \mu(t, c)}{2 (-B)}$ with dynamic capacity shadow cost $\mu(t, c)$.
-   - [`duopoly_poisson_logit.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly_poisson_logit.py): Calibrates prior arrival parameters to multi-round data ($\alpha_0 = -0.15, \alpha_1 = 1.30, \gamma_0 = 2.10$) and dynamically bounds discrete choice surplus optimization within empirical WTP limits.
+4. **Econometric Regression Upgrades across Variants** (these experimental files are not in this repository; their tournament logs are `data/mlr` and `data/poisson_logit`):
+   - [`duopoly_mlr.py`](duopoly_mlr.py): Solves closed-form optimal pricing directly from fitted OLS slopes: $p^* = \frac{A - B \cdot \mu(t, c)}{2 (-B)}$ with dynamic capacity shadow cost $\mu(t, c)$.
+   - [`duopoly_poisson_logit.py`](duopoly_poisson_logit.py): Calibrates prior arrival parameters to multi-round data ($\alpha_0 = -0.15, \alpha_1 = 1.30, \gamma_0 = 2.10$) and dynamically bounds discrete choice surplus optimization within empirical WTP limits.
 
 ---
 
@@ -492,24 +505,23 @@ Following the deployment of Round 5 and experimental variants, tournament data r
    - The tournament matchmaking engine randomly sampled an unprecedented low-demand simulation regime.
    - Empirical demand modeling across these matches revealed that baseline passenger arrival intensity ($\beta_0$) collapsed from **$+2.12$** in `v5` down to **$+0.21$** in `mlr` / `v5.1`.
    - The late-season booking surge ($\beta_t$) flattened from **$+0.83$** down to **$+0.29$**.
-   - Total passenger arrivals across all 100 days dropped to just **35–50 passengers total** across the entire market (while combined airline capacity remained 160 seats).
+   - Our own sales dropped to 28–47 seats per season on average. *Caveat (added in v6.1):* we only observe our own sales, so total market arrivals are unknown. In these logs we usually priced at or just above a rival sitting at or below our \$25 floor (e.g. \$25.3 vs \$25.0), so low sales are partly being undercut, not only low demand. Where we were cheaper (`4HzR7t`: \$28 vs \$30) we sold 68 seats per season.
 
-2. **The High-Rival Deadlock in Low-Demand Routes (`WB9uo7` & `Vz6D2S`)**:
-   - Competitors in these matches either quoted high fares (\$68–\$75) or went bankrupt dumping at \$0.00.
-   - Because legacy rules assumed a normal market WTP of \$55–\$85, our pricing algorithm quoted \$45–\$55.
-   - In a market where passenger reservation prices capped at \$30–\$35, quoting \$48 produced **zero bookings for weeks at a time**.
-   - Waiting for Season 1 to conclude before adapting meant forfeiting 100 days of revenue.
+2. **Zero sales in `WB9uo7` (`RadiantMussel`)** *(corrected in v6.1; the original text described a high-priced rival, which the data do not show)*:
+   - `RadiantMussel` priced at a median of \$18.80, below our \$25 floor, for most of the competition (min \$3.90).
+   - We sat at \$25 for most periods and sold **0 seats in 100 seasons**; even the occasional periods where we were cheaper produced no sales.
+   - This motivated the lower \$18 floor once low demand is detected, and the high-rival ceiling guard for the opposite case. (`Vz6D2S`, mentioned in earlier drafts, is not in the data folder.)
 
 3. **Retirement of Poisson Logit**:
    - The discrete choice Poisson Logit formulation suffered from numerical sigmoid saturation when rival price spreads widened.
    - Grid search optimization across discrete price increments failed to scale efficiently within Docker runtime constraints.
-   - In contrast, Multiple Linear Regression (MLR) provides an exact, non-iterative closed-form solution with provable convexity ($B < 0$).
+   - In contrast, a linear demand model gives a closed-form price, and the objective is concave whenever $B < 0$ (which v6.1 enforces).
 
 ---
 
 ### 16.2 Empirical Retraining of the 3-Regime MLR Model (377,570 Periods)
 
-We combined and standardized all 13 historical tournament datasets (377,570 active periods) into three macroeconomic regimes:
+We pooled the 7 tournament CSV files (39 competition runs, 377,570 active duopoly periods) into three groups. *Note (v6.1):* in the fit below `beta_diff = p_riv − p` is a linear combination of `p` and `p_riv`, so only `B = beta_p − beta_diff` and `C = beta_riv + beta_diff` are identified; v6.1 stores those. The `low_demand` fit has R² = 0.04.
 
 ```python
 REGIME_PRESETS = {
@@ -532,7 +544,7 @@ REGIME_PRESETS = {
 
 ### 16.3 The Rule Pruning vs. Retention Matrix
 
-Rather than stacking more rules onto the legacy codebase, we unified [`duopoly.py`](file:///c:/Users/ramiz/OneDrive/Desktop/BHT/BHT%20-%20Assignments/Semester%203/Learning%20Optimization/duopoly.py) around closed-form MLR, pruning fragile heuristic rules while retaining essential economic safeguards:
+Rather than stacking more rules onto the legacy codebase, we unified [`duopoly.py`](duopoly.py) around closed-form MLR, pruning fragile heuristic rules while retaining essential economic safeguards:
 
 | Component | Status | Action Taken | Architectural Rationale |
 | :--- | :---: | :--- | :--- |
@@ -541,10 +553,10 @@ Rather than stacking more rules onto the legacy codebase, we unified [`duopoly.p
 | **Mid-Season Micro-Probing ($t \% 6$)** | **REMOVED** | Replaced by continuous pacing feedback | Arbitrary probing pulses disrupted booking momentum and conceded sales to rivals. |
 | **Hardcoded 5-Archetype Step Pricing** | **REMOVED** | Handled continuously by rival EMA | Rival pricing is continuously integrated via $A = \beta_0 + (\beta_{\text{riv}} + \beta_{\text{diff}})p_{\text{riv}} + \beta_t\tau$. |
 | **Static \$38 Anchor Floor** | **REMOVED** | Replaced by dynamic floor (\$18 vs \$25) | Cures lockout against dumpers in low-WTP markets where \$38 is above customer reservation prices. |
-| **Fast In-Season Low-Demand Latch** | **RETAINED & HARDENED** | Day 10 zero sales at \$48–\$55 triggers immediate low demand | Prevents wasting 100 days in Season 1 waiting for cross-season statistics. |
-| **Dynamic High-Rival Ceiling Guard** | **ADDED** | $p^* \le \operatorname{clip}(46 - 1.5\cdot\text{gap}, 26, 48)$ | Prevents algorithm from following overpriced rivals into dead zones (+3,289% revenue vs \$72 rivals). |
+| **Fast In-Season Low-Demand Latch** | **RETAINED & HARDENED** (replaced by an SPRT in v6.1, §17) | In code: 8 zero-sale days at \$48–\$56, or 4 zero-sale days while cheaper than the rival at ≤ \$55 | Prevents wasting 100 days in Season 1 waiting for cross-season statistics. |
+| **Dynamic High-Rival Ceiling Guard** | **ADDED** | $p^* \le \operatorname{clip}(46 - 1.5\cdot\text{gap}, 26, 48)$ | Prevents algorithm from following overpriced rivals into dead zones (lesson from v3.0 `3kGhWc`). |
 | **Continuous Target Curve Pacing** | **RETAINED** | Drives capacity opportunity cost $\mu(t, c)$ | Regulates depletion pace to prevent early giveaway and late spoilage. |
-| **Terminal Clearance Safety Valve** | **RETAINED** | Liquidates unsold seats at $t \ge 90$ | Guarantees zero seat spoilage at Day 100 departure. |
+| **Terminal Clearance Safety Valve** | **RETAINED** | Discounts unsold seats at $t \ge 90$ | Reduces (does not guarantee to eliminate) spoilage at departure. |
 
 ---
 
@@ -577,11 +589,196 @@ To ensure clear alignment between economic theory and algorithm mechanics:
 
 ### 16.5 Verification & Benchmark Validation
 
-The unified v6.0 engine was validated across synthetic and historical tournament simulations:
-1. **Low-Demand Stress Test (`data/mlr`)**: Win rate improved from 42% to **88.9%**, eliminating zero-conversion stagnation.
-2. **High-Rival Exploitation**: When rival prices at \$72 in low-demand routes, v6.0 captured **\$136,440** vs rival's \$4,100 (**+3,289% revenue**).
-3. **Multi-Regime Robustness**: Achieved **88.9%–97.8% win rates** across all three macroeconomic regimes in 1,500 simulation seasons.
-4. **Unit Test Integrity**: All 17 unit tests in `tests/test_algorithm.py`, `tests/test_data_integrity.py`, and `tests/test_simulation.py` pass cleanly.
+*(Revised in v6.1.)* The figures originally listed here (a win rate rising from 42% to 88.9% on `data/mlr`, "\$136,440 vs \$4,100 (+3,289%)" against a \$72 rival, "88.9%–97.8% win rates", and "17 unit tests" including a `tests/test_simulation.py`) cannot be reproduced with any script in this repository, so they have been withdrawn. The test suite had 15 tests at the time. Reproducible results are in §17.
 
+---
 
+## 17. The `v6.1` Correctness Release
 
+A code review of v6.0 found four bugs that together made the 3-regime design behave as "always low demand" from mid-season 1 onward, plus a simulator bug that hid this.
+
+### 17.1 Bugs fixed in `duopoly.py`
+
+| # | Bug in v6.0 | Effect | Fix in v6.1 |
+| :--- | :--- | :--- | :--- |
+| 1 | `_handle_season_transition` recorded the previous season's sales in period 1 of the next season, where the server passes `demand_history=None`. | A phantom 0-seat season after every real season (`[77, 0, 77, 0, …]`), a permanent `low_demand` latch, and one bad season counted twice (so the two-season circuit breaker fired after one). | Season bookkeeping happens only in period 101; period 1 only resets per-season trackers. The regime is re-evaluated every season and never permanently latched. |
+| 2 | In-season latch: 4 zero-sale days in a row while cheaper than the rival at ≤ \$55. | Early-season arrivals are 0.3–0.5 per day, so this is normal noise: it would have fired in 43.7% of good seasons (≥ 60 seats) in `data/v3`–`v5`. | Poisson SPRT (normal rate $0.5 + 0.9\tau$ vs 45% of it, threshold $\ln 99$, min 8 observations, reset each season): **4.2%** false positives. |
+| 3 | `_calculate_monopoly_price`: the top of the sweet-spot band was below the floor, so the "burn discount" was negative. | The monopoly price was a constant \$50 (\$46 under low WTP); the low-demand "scarcity bonus" returned \$36, *below* normal. | Regime bands (low \$28–\$44, average \$48–\$72, high \$50–\$66), with the price falling linearly as the burn rate rises from 0.3 to 1.2. Bands from observed monopoly conversion in `data/v4`/`v5`. |
+| 4 | Regression features `[p, p_riv, p_riv − p, τ]` (rank 3), with clamps on individual unidentified coefficients. | Clamps acted on arbitrary values. | Features `[p, p_riv − p, τ]`; guards on the identified slopes $B \le -0.006$ and $C \ge 0$. Training rows are now time-stamped with the period they belong to. |
+
+Smaller changes: the inventory-gap progress now uses `(t−1)/99` like the documentation; the rival price level is no longer used as evidence of low demand (it disabled the deep-dumper holdout from season 2 on).
+
+Fixing bug 1 exposed two guards that had only looked good because the code was stuck in low-demand mode. Both were re-set from the tournament data:
+* **Cheap-rival floor:** against a rival under \$38, v6.0 (normal mode) held a \$35–\$44 anchor. In `data/v3`–`v5`, pricing below such a rival earned about \$40 per period, versus \$15–\$20 when holding \$2–\$10 above it. v6.1 follows just below the rival, floored at `min(rival − 0.5, 28)`.
+* **Late-season cap against a high rival** (t ≥ 75, rival ≥ \$54): lowered from \$72 to \$58. Revenue per period in those situations falls above about \$58 in `data/v3`–`v5`.
+
+### 17.2 Simulator fix
+
+`MarketDemandModel` ignored `avg_arrivals`: every market had about 105–126 expected arrivals per season, and the "low demand (~68)" benchmark market actually had the *most* arrivals. Arrival rates are now scaled so that expected total arrivals equal `avg_arrivals`.
+
+### 17.3 Results
+
+Multi-seed benchmark (`analytics/benchmark_3regime_models.py`, 5 seeds × 30 seasons × 4 rivals per market), mean revenue per season summed over rivals:
+
+| Market (simulated) | v6.1 | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: |
+| Low (~68 arrivals) | **\$3,315** | \$3,035 | \$1,425 |
+| Average (~95 arrivals) | **\$7,809** | \$7,787 | \$5,286 |
+| High (~135 arrivals) | \$9,755 | **\$9,838** | \$5,547 |
+
+On the single-seed scenario suite (`analytics/run_benchmark.py`), v6.1 totals \$1,223.7k vs \$1,222.7k for v6.0. v6.1 is also more stable: against the old v1.0 rival in the low market, v6.0's revenue varied by ±\$370 per season across seeds, versus ±\$27 for v6.1.
+
+* Tests: 22 pass (7 new regression tests in `tests/test_v61_fixes.py`, one per fix).
+* Latency: 0.05 ms mean, about 12 ms worst case (the once-per-season refit).
+
+### 17.4 Figures
+
+All figures in `imgs/` except the two historical v2.0 figures are now generated by scripts from data or from `duopoly.py` itself:
+
+| Figure | Script | Change |
+| :--- | :--- | :--- |
+| `dpc_strategy_visualization.png` | `generate_strategy_visualization.py` | Was a hand-drawn trajectory; now a simulated v6.1 season and the detector calibration on real data. |
+| `mlr_strategy_explained.png` | `generate_mlr_explanation_visuals.py` | Curves now come from `duopoly.py`'s own functions (the old μ curve used constants that differed from the code). |
+| `regression_empirical_analysis.png` | `train_regression_models.py` | Collinear feature removed; the "target depletion rate" line was a cumulative curve and is now the actual rate; the logistic curve is no longer scaled by an arbitrary 1.6. |
+| `algorithm_variant_comparison.png` | `run_benchmark.py` | v6.1 with the fixed simulator; clipped labels fixed. |
+| `v1_…`, `v3_…`, `v4_…postmortem.png` | `generate_postmortem_plots.py` (new) | Rebuilt from the CSVs; the old v3 Panel 3 showed a rival ramping from \$20 to \$100, but the real rival was flat at about \$71. Pie charts with overlapping labels replaced by bar charts. |
+| `dpc_game_rules_visualization.png`, `price_response_plots.png` | `generate_concept_plots.py` (new) | Arrival curve rescaled from about 300 to about 92 arrivals per season; typo fixed. |
+
+All scripts share `analytics/plot_style.py`, which sets `text.parse_math = False` so "\$40-\$70" renders literally.
+
+### 17.5 Demand model choices: expected demand (not rounded) and MLR over Poisson
+
+**Why predicted demand is not rounded to a whole number.** The regression predicts *expected* seats sold per day, an average. Daily sales are whole numbers (0, 1, 2, …), but their average is not: an expected demand of 0.6 means that over many similar days we sell 0.6 seats per day on average. The price is chosen to maximise expected margin, $(p - \mu) \cdot E[\text{sales}]$, and for that the average is exactly the right quantity. Rounding would break it: most days the prediction lies between about 0.3 and 1.4, so it would round to 0 or 1 across wide price ranges, expected revenue would look flat in price, and there would be no optimum to find. The in-season low-demand test (§17.1) also works with expected rates, not rounded ones.
+
+Whole numbers would matter in two places, neither implemented yet:
+* the probability of selling 0, 1 or 2 seats on a day (needs a count model), and
+* the seat cap in the last days: with 2 seats left we cannot sell 3, so expected sales should be $E[\min(D, \text{seats left})]$.
+
+**Why MLR and not a Poisson regression.** A Poisson regression is the textbook model for counts: it never predicts negative sales and gives probabilities for 0, 1, 2 seats. We compared it with MLR the way the model is used online, per competition, on that competition's own data only (`python analytics/compare_demand_models.py`; features: our price, rival price − our price, season progress):
+
+| Training data per competition | Competitions | RMSE MLR | RMSE Poisson | MLR better (RMSE) | Poisson deviance MLR | Poisson deviance Poisson |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| ~25 seasons (~2,500 days, our training window) | 33 | **0.724** | 0.795 | 20 / 33 | 0.900 | **0.898** |
+| 1 season (~100 days, the first refit) | 32 | **0.764** | 31.256 | 27 / 32 | **0.987** | 29.451 |
+
+* With plenty of data the two are about equally good (MLR has the lower RMSE, Poisson is marginally better on deviance).
+* With little data, which is exactly when the online model is first refit in each competition, the Poisson model's exponential curve extrapolates badly and some predictions explode. MLR stays stable.
+* MLR also gives a closed-form price ($p^* = \frac{A - B\mu}{2(-B)}$) and fits in about 2 ms (Poisson about 6 ms).
+* The cost of MLR: it predicts negative sales on about 4% of days (very high prices). In practice the price band around the rival and the slope guard $B \le -0.006$ keep the chosen price away from that region.
+
+Decision: keep MLR as the online demand model. A Poisson model could be reconsidered later with a prior (e.g. starting from pooled data) so that it does not explode on one season of data.
+
+*Note:* the "Poisson-logit" variant retired in §16.1 was a different model (a discrete-choice formulation optimised by grid search). The reasons given there (sigmoid saturation, grid-search runtime) were not re-tested in v6.1. Its tournament round earned about \$123k per match against \$76k for the MLR variant's round, but the rounds had different rivals and markets, so that is not a model comparison.
+
+### 17.6 Forecasting the rival's price: yesterday's price in the price formula ("A2")
+
+We post our price at the same time as the rival, so today's rival price has to be guessed. v6.0 used the average of the rival's last 5 prices everywhere. On the tournament logs, yesterday's price is the better guess: it misses by \$1.80 on average (within \$1 on 68% of days) against \$2.31 (59%) for the 5-day average.
+
+We tested two versions against v6.1 (17 scenarios: 3 simulated markets × 4 rival types plus 5 replayed tournament rivals; 10 seeds × 30 seasons each):
+
+| Version | Total revenue change | 95% range | Better in |
+| :--- | :---: | :---: | :---: |
+| A2: yesterday's price in the price formula only | **+0.40%** | +0.07% to +0.73% | 7 / 10 seeds |
+| A1: yesterday's price everywhere (guardrails too) | −0.13% | −0.47% to +0.21% | 3 / 10 seeds |
+
+* A2's gain comes mostly from the copycat rival (+6.9% in the average market, +2.9% in the high market), whose price moves step by step; elsewhere the change is within about ±1%.
+* A1 lost 14% in the low-demand market against the bounded (\$40–\$70) rival: one high day could switch the "\$58+ ceiling" guard on and off. The guardrails therefore keep the 5-day average.
+
+Adopted: A2 (`_calculate_duopoly_price` passes `latest_rival_price` to `_solve_closed_form_optimal_price`; test `test_price_formula_uses_yesterdays_rival_price`). The gain is small; a better rival forecast matters little because the price band, the shadow cost and the guardrails decide most of the price.
+
+### 17.7 Where the shadow-cost numbers come from (limitation)
+
+The shadow cost $\mu = \operatorname{clip}(26 - 16\cdot(\text{burn} - 0.8) - 2.4\cdot\text{gap},\ 10\ (2),\ 56)$ is a **hand-tuned rule**, not an estimate. It entered the code in the v6.0 commit (`fabf9c7`) without a derivation, and earlier documentation listed different constants (24 / 14 / 2.0 / max 48). What the numbers mean:
+
+* **26:** the value of a seat (in \$) when we are exactly on the target curve and need to sell the "normal" 0.8 seats per day (80 seats / 100 days).
+* **16:** for every extra seat per day we need to sell above 0.8, a seat is worth \$16 less (e.g. needing 1.3 per day lowers μ by \$8).
+* **2.4:** every seat we are behind the target lowers μ by \$2.40; every seat ahead raises it by \$2.40.
+* **10 / 2 and 56:** floor (\$2 once low willingness to pay is detected) and cap.
+
+In revenue-management theory μ is the *expected revenue the last remaining seat would still earn later* (the marginal value of capacity). A data-based version would compare expected remaining demand with the seats we have left: if the market will want more seats than we have, the last seat will sell later at a good price (μ high); if it will want fewer, the last seat will go unsold (μ near 0). Estimating μ this way from the demand model is an open improvement.
+
+---
+
+## 18. The `v6.2` Learned Target Curve
+
+### 18.1 Problem: one fixed plan for every market
+
+Up to v6.1 the target curve (the plan for how many seats should be sold by each day) was one hand-chosen formula for every market:
+
+$$\text{TargetSold}(\tau) = 80 \cdot \left((1 - c)\,\tau + c\,\tau^2\right), \qquad c = 0.15$$
+
+The bend $c$ says how much of the selling is pushed towards the end of the season ($c = 0$: a straight line; $c = 1$: a parabola that sells very little early). The tournament data show that real markets book very differently:
+
+| `data/v5` match | Seasons with 75+ seats sold | Fitted bend $c$ | Seats sold by day 50 (average) |
+| :--- | :---: | :---: | :---: |
+| `3UmBuN` (books early) | 89 | 0.01 | about 39 |
+| `Gq2CUL` (books late) | 99 | 0.82 | about 24 |
+| Fixed v6.1 plan | – | 0.15 | 37 |
+
+In `Gq2CUL` we were up to 30 seats "behind" the fixed plan in most seasons, so the shadow cost $\mu$ kept our price about \$10 under the rival's, yet 79 of 80 seats sold anyway (§4.4 of the README, `imgs/booking_vs_target_real.png`). The discount was not needed.
+
+### 18.2 What v6.2 does
+
+Each match plays the same market up to 100 times, so the plan can be learned from the seasons that went well:
+
+1. **Which seasons count as "good".** Only seasons with **75 or more** seats sold (`TARGET_LEARN_MIN_SOLD`). In a season that sold out early or sold too few seats, the booking curve says more about our prices than about when customers arrive.
+2. **One bend per good season.** At the end of the season (period 101) the season's booking curve is turned into shares (seats sold by day $t$ ÷ seats sold in the season) and the bend $c$ is fitted to it by least squares (`_fit_season_target_bend`). Fitting a single number keeps the plan smooth and always ending at 80 seats.
+3. **Start from what similar markets did.** Old tournament data are grouped by regime, and each group's average bend is a prior (`TARGET_C_PRIOR`): low demand 0.67, average 0.19, high 0.60 (fitted on the 75+ seasons of the same data files as the regime priors; `3kGhWc` excluded because its rival stayed at \$71 and the curve reflects our holdout, not the market).
+4. **Online update.** After every season:
+   $$c = \operatorname{clip}\!\left(\frac{3 \cdot c_{\text{prior}} + \sum_i c_i}{3 + n},\ 0,\ 0.8\right)$$
+   where $c_i$ are the bends of the $n$ good seasons so far and $c_{\text{prior}}$ is the prior of the regime the season was classified as. The prior counts like 3 seasons (`TARGET_PRIOR_WEIGHT`), so one unusual season moves the plan only a little, and after about 10 good seasons the market's own data dominate.
+5. **Until the first good season, keep 0.15** (`TARGET_C_DEFAULT`). The cap of 0.8 keeps the plan from waiting too long.
+6. The bend is fixed for the whole season (`state["target_c_now"]`, computed in period 101) and passed to `_calculate_inventory_gap`. Nothing else in the pricing changes: a better plan simply makes the inventory gap, and therefore $\mu$, more accurate.
+
+So the target curve now uses the **booking curves** of past good seasons (seats sold over time), and through the 75-seat rule it is learned only from seasons with high **capacity utilization** (≥ 94% of the plane).
+
+### 18.3 Variants tested
+
+17 scenarios (3 simulated markets × 4 rival types, plus 5 replayed tournament rivals), 10 seeds × 30 seasons each, total revenue change against v6.1 (with A2):
+
+| Variant | Total change | 95% range | Better in | Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| Group prior only (no online learning) | +0.90% | – | – | One curve per regime from old data. |
+| Learned online, pooled prior | +1.87% | – | – | One prior for all regimes. |
+| Learned online, group prior from season 1 | +2.07% | ±0.29% | 10 / 10 | Lost 3.9% in the low market against the bounded rival: the low prior (0.67) applied before any good season. |
+| **(a) Group prior, 0.15 until the first good season** | **+2.01%** | ±0.16% | 10 / 10 | No loss in the low market. **Adopted.** |
+| (b) Prior always 0.15 | +1.83% | ±0.22% | 10 / 10 | |
+
+### 18.4 Result of the final code
+
+Benchmark of the final `duopoly.py` v6.2 against v6.1 (same 17 scenarios, 10 seeds × 30 seasons):
+
+| Scenario | v6.1 revenue per season | v6.2 change |
+| :--- | :---: | :---: |
+| Average market, old v1.0 rival | \$2,762 | **+12.4%** ±0.9 |
+| High market, old v1.0 rival | \$3,168 | **+6.8%** ±0.9 |
+| Replayed `UncoveredElephant` (`3PTJwD`) | \$2,038 | **+3.9%** ±1.5 |
+| High market, bounded / copycat rival | \$2,970 / \$1,800 | +1.0% / +1.1% |
+| Replayed `ImpartialGoldfish` (`3UmBuN`) | \$2,239 | −1.2% ±1.3 |
+| Replayed `ConvivialCrane` (`Gq2CUL`) | \$2,241 | −1.4% ±0.7 |
+| Low market, all rivals | – | −0.2% to 0.0% |
+| **Total (17 scenarios)** | **\$31,635** | **+1.95%** ±0.23 (better in 10 / 10 seeds) |
+
+Standard benchmarks re-run with v6.2:
+
+| Market (`benchmark_3regime_models.py`, 5 seeds × 30 seasons, sum over 4 rivals) | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: | :---: |
+| Low (~68 arrivals) | \$3,324 | **\$3,328** | \$3,035 | \$1,425 |
+| Average (~95 arrivals) | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals) | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
+
+On the single-seed scenario suite (`analytics/run_benchmark.py`, 6 rivals × 100 seasons), v6.2 totals \$1,281.9k (v6.1 before A2: \$1,223.7k) and wins all 6 scenarios.
+
+* Learned bends at the end of 30 seasons: low market 0.18 (few good seasons, stays near 0.15), average 0.47, high 0.78, replayed rivals 0.72.
+* Capacity utilization is unchanged (74.7% vs 75.0%): v6.2 sells the same seats, at better prices, because it no longer discounts when a late-booking market is only "behind" the old plan.
+* The two replayed `data/v5` rivals lose a little (−1.2% / −1.4%). Against these replayed rivals the learned bend rises to about 0.7, and a later plan holds back seats that, against these two rivals, would have sold at a good price earlier. The loss is within about 1.5%.
+* Tests: 26 pass (3 new: the bend of a synthetic season is recovered, the bend stays 0.15 until the first good season and then learns, and only seasons with 75+ seats are learned from).
+* Figure: `imgs/learned_target_curve.png` (`analytics/generate_learned_target_plot.py`). Left: the real average booking curves of `3UmBuN` and `Gq2CUL` with their learned plans and the fixed plan. Right: the bend v6.2 uses in each season of the three simulated markets.
+
+![Learned target curve](imgs/learned_target_curve.png)
+
+### 18.5 Limits
+
+* The bend is still one number: a plan with a different shape (e.g. a flat middle) cannot be represented.
+* A season counts as "good" only if it sold 75+ seats. In low-demand markets there are few such seasons, so the plan stays near 0.15 there.
+* The shadow-cost constants (§17.7) were tuned with the fixed 0.15 curve; re-tuning them together with the learned plan is open.

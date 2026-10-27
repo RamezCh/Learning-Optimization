@@ -19,8 +19,10 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from plot_style import apply_style, plt  # noqa: E402
+import matplotlib.gridspec as gridspec  # noqa: E402
+from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 from sklearn.linear_model import LinearRegression, PoissonRegressor, LogisticRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, roc_auc_score, accuracy_score, brier_score_loss
@@ -68,7 +70,10 @@ def main():
     print(f"Test Set  (Seasons 81..100): {len(test_df):,} periods ({len(test_df)/len(df):.1%})")
     
     # Feature matrices
-    feature_cols = ['price', 'price_competitor', 'price_diff', 'norm_period', 'period_sq']
+    # Note: price_competitor is NOT included because price_diff = price_competitor - price makes
+    # [price, price_competitor, price_diff] linearly dependent (rank deficient), which leaves the
+    # individual coefficients unidentified. [price, price_diff] carries the same information.
+    feature_cols = ['price', 'price_diff', 'norm_period', 'period_sq']
     X_train = train_df[feature_cols].values
     y_train_demand = train_df['demand'].values
     y_train_binary = train_df['has_sale'].values
@@ -88,6 +93,7 @@ def main():
     y_pred_mlr_test = mlr.predict(X_test)
     
     r2_train = r2_score(y_train_demand, y_pred_mlr_train)
+    print(f"MLR Train R²: {r2_train:.4f}")
     r2_test  = r2_score(y_test_demand, y_pred_mlr_test)
     rmse_test = np.sqrt(mean_squared_error(y_test_demand, y_pred_mlr_test))
     mae_test  = mean_absolute_error(y_test_demand, y_pred_mlr_test)
@@ -136,6 +142,7 @@ def main():
     # 4. Generate Publication-Quality Visualizations
     # -------------------------------------------------------------------------
     print("\nGenerating empirical plots and test evaluation...")
+    apply_style()
     os.makedirs('imgs', exist_ok=True)
     
     fig = plt.figure(figsize=(20, 12), dpi=200)
@@ -224,7 +231,6 @@ def main():
     sample_t_norm = 0.5
     X_eval = np.column_stack([
         eval_prices,
-        np.full_like(eval_prices, sample_rival),
         sample_rival - eval_prices,
         np.full_like(eval_prices, sample_t_norm),
         np.full_like(eval_prices, sample_t_norm ** 2)
@@ -232,19 +238,19 @@ def main():
     
     pred_mlr_curve = mlr.predict(X_eval)
     pred_pois_curve = poisson_model.predict(X_eval)
-    pred_logit_curve = logit_model.predict_proba(X_eval)[:, 1] * 1.6 # scaled to expected arrivals
-    
-    ax2.plot(eval_prices, pred_mlr_curve, color=c_blue, linewidth=2.5, linestyle='-', label=f'Linear Regression (R²={r2_test:.3f})')
-    ax2.plot(eval_prices, pred_pois_curve, color=c_emerald, linewidth=2.5, linestyle='--', label=f'Poisson Regressor (RMSE={rmse_pois:.3f})')
-    ax2.plot(eval_prices, pred_logit_curve, color=c_amber, linewidth=2.2, linestyle='-.', label=f'Logistic Choice Model (AUC={auc_test:.3f})')
+    pred_logit_curve = logit_model.predict_proba(X_eval)[:, 1]  # P(at least one sale), unscaled
+
+    ax2.plot(eval_prices, pred_mlr_curve, color=c_blue, linewidth=2.5, linestyle='-', label=f'Linear Regression (test R²={r2_test:.3f})')
+    ax2.plot(eval_prices, pred_pois_curve, color=c_emerald, linewidth=2.5, linestyle='--', label=f'Poisson Regressor (test RMSE={rmse_pois:.3f})')
+    ax2.plot(eval_prices, pred_logit_curve, color=c_amber, linewidth=2.2, linestyle='-.', label=f'Logistic: P(≥1 sale) (test AUC={auc_test:.3f})')
     
     # WTP boundary marks
-    ax2.axvline(50.0, color='#64748b', linestyle=':', label='Budget WTP Ceiling ($50)')
-    ax2.axvline(85.0, color='#64748b', linestyle=':', label='Leisure WTP Ceiling ($85)')
+    ax2.axvline(50.0, color='#64748b', linestyle=':', label='Course spec: low-WTP segment up to ~$50')
+    ax2.axvline(85.0, color='#64748b', linestyle=':', label='Course spec: mid-WTP segment up to ~$85')
     
     ax2.set_title('Panel 2: Demand vs Price Response Curves\n(Evaluated at Mean Rival Price $45.00, Period 50)', fontsize=12, fontweight='bold', pad=10)
     ax2.set_xlabel('Our Asking Price ($)', fontsize=10, fontweight='bold')
-    ax2.set_ylabel('Expected Demand (Seats/Period)', fontsize=10, fontweight='bold')
+    ax2.set_ylabel('Expected seats/period  (logistic curve: probability)', fontsize=10, fontweight='bold')
     ax2.set_ylim(-0.1, 2.8)
     ax2.legend(loc='upper right', frameon=True, fontsize=9)
     
@@ -265,19 +271,15 @@ def main():
     # Polynomial / Convex Trend
     poly_fit = np.poly1d(np.polyfit(period_stats['selling_period'], period_stats['mean_demand'], 2))
     t_smooth = np.linspace(1, 100, 100)
-    ax3.plot(t_smooth, poly_fit(t_smooth), color=c_blue, linewidth=2.8, label=r'Convex Trend: $\lambda(t) \propto t^2$')
-    
-    # Target depletion curve mapping
-    target_curve = 0.80 * (0.85 * (t_smooth/100) + 0.15 * (t_smooth/100)**2)
-    ax3.plot(t_smooth, target_curve, color=c_emerald, linewidth=2.2, linestyle='--', label='Target Depletion Rate (duopoly.py)')
-    
-    ax3.annotate('Late Season Surge (Periods 80–100):\nArrivals double from baseline\n(Exploited for late clearance & yield)',
-                 xy=(90, 1.2), xytext=(20, 1.4),
-                 arrowprops=dict(facecolor=c_blue, edgecolor=c_blue, width=1.5, headwidth=6),
-                 bbox=dict(boxstyle='round,pad=0.5', facecolor='#eff6ff', edgecolor=c_blue, alpha=0.9),
-                 fontsize=9, fontweight='bold', color='#1e40af')
+    ax3.plot(t_smooth, poly_fit(t_smooth), color=c_blue, linewidth=2.8, label='Quadratic fit of mean seats sold per period')
 
-    ax3.set_title('Panel 3: Temporal Arrival Acceleration Toward Departure\n(Validating Slide 6 Poisson Dynamics Across 100 Days)', fontsize=12, fontweight='bold', pad=10)
+    # Target sales RATE implied by duopoly.py's target curve: d/dt [80*(0.85*tau + 0.15*tau^2)],
+    # tau = (t-1)/99  ->  (80/99) * (0.85 + 0.30*tau) seats per period
+    tau_smooth = (t_smooth - 1) / 99.0
+    target_rate = (80.0 / 99.0) * (0.85 + 0.30 * tau_smooth)
+    ax3.plot(t_smooth, target_rate, color=c_emerald, linewidth=2.2, linestyle='--', label='Target sales rate implied by duopoly.py target curve')
+
+    ax3.set_title('Panel 3: Our Sales per Period Over the Booking Window\n(our own sales only, v3 + v4; roughly doubles from day 1 to day 85)', fontsize=12, fontweight='bold', pad=10)
     ax3.set_xlabel('Selling Period (Day 1..100)', fontsize=10, fontweight='bold')
     ax3.set_ylabel('Average Seats Sold / Period', fontsize=10, fontweight='bold')
     ax3.legend(loc='upper left', frameon=True, fontsize=9)
@@ -314,10 +316,11 @@ def main():
     
     ax4.set_title('Panel 4: Chronological Holdout Evaluation (Seasons 81–100)\n(Trained on Seasons 1–80, Evaluated on Blind Future Seasons)', fontsize=12, fontweight='bold', pad=10)
     ax4.set_xlabel('Selling Season (Test Set: 81 to 100)', fontsize=10, fontweight='bold')
+    ax4.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax4.set_ylabel('Total Seats Sold per Season', fontsize=10, fontweight='bold')
     ax4.legend(loc='lower left', frameon=True, fontsize=9)
     
-    plt.tight_layout()
+    # GridSpec spacing + bbox_inches="tight" (plot_style) handle layout; tight_layout clashes with the colorbar
     output_fig = 'imgs/regression_empirical_analysis.png'
     plt.savefig(output_fig, dpi=200)
     plt.close()
