@@ -213,13 +213,13 @@ When `v3.0` was deployed into the `data/v3` competition (70,000 periods across 7
 *(Rebuilt from `data/v3` by `analytics/generate_postmortem_plots.py`; trajectories are real seasons with typical revenue.)*
 
 * **Panel 1:** revenue and load factor per tournament, highlighting `35zapi` (\$0) and `3kGhWc` (\$168k).
-* **Panel 2 (`35zapi`):** v3.0 holds \$58 while `RussetBat` prices at \$4–\$16. The rival sold out in 72 of 100 seasons, typically only at period 98, and v3.0 sold nothing in the 2 remaining days at \$64.
+* **Panel 2 (`35zapi`):** v3.0 holds \$58 while `RussetBat` prices mostly at \$8–\$14 (median \$12). The rival sold out in 72 of 100 seasons, late (day 98 at the median, between day 75 and day 100), and v3.0 sold nothing in the remaining monopoly days at \$64 (372 days in total, about 5 per season in which the rival sold out). The season shown is season 1.
 * **Panel 3 (`3kGhWc`):** `LoutishMacaque` sits at about \$66–\$71 all season. v3.0 prices about \$62–\$68 (middle half of days) just under it, sells about 3 seats in days 1–75, then ramps down to \$25 after day 75 and sells most of its seats in the last two weeks.
 
 ### Vulnerability 1: The Zero-Revenue Holdout Blowout (`35zapi` $\to$ \$0.00)
 - In `35zapi`, `RussetBat` priced at ~\$12.00. Our algorithm classified them as `deep_dumper`.
 - **The Failure:** `v3.0` bypassed all pacing and locked price at **\$58.00 duopoly / \$64.00 monopoly**.
-- In this market, `RussetBat` only sold out at Period 98 in 72 seasons (and never in 28). In the remaining 2 periods, customer WTP was below \$64.
+- In this market, `RussetBat` sold out in 72 seasons, late (day 98 at the median; between day 75 and day 100), and never in the other 28. In the remaining monopoly days (372 in total, about 5 per sold-out season) nobody bought at \$64.
 - **Result:** **0 seats sold across 100 seasons (\$0.00 total revenue)**! The algorithm repeated the exact same failed holdout for 99 seasons with no circuit breaker.
 
 ### Vulnerability 2: High-Pricer "Dead Zone" & 40% Seat Spoilage (`3kGhWc` $\to$ \$168k)

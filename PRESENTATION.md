@@ -70,7 +70,7 @@ timeline
 
 ### Failure 3: The Passive Holdout Blowout (v3.0 $\to$ The `35zapi` $\$0.00$ Catastrophe)
 * **What Happened:** We designed a "Holdout Rule": when a rival prices $\le \$20$, hold firm at $\$58.00$ until they sell out. Against fast dumpers, this worked. But in tournament `35zapi`, competitor `RussetBat` priced at $\$12$, and total customer arrival volume was abnormally slow.
-* **The Fatal Flaw:** `RussetBat` took until **Period 98** to sell out! By the time we entered monopoly mode, only 2 days remained. In those 2 days, passenger valuation was below $\$64$.
+* **The Fatal Flaw:** `RussetBat` sold out in only 72 of 100 seasons, and late: **day 98 at the median**. By the time we were the only seller, about 5 days remained on average, and at $\$64$ nobody bought in those days either. In the other 28 seasons the rival never sold out.
 * **The Horror Result:** **0 seats sold across 100 seasons (\$0.00 total revenue)**! The bot stubbornly waited for a monopoly that arrived too late.
 
 ### Failure 4: The Dumper Deadlock (v4.0 $\to$ `3d8tDh` 4,342 Spoiled Seats)

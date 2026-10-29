@@ -77,7 +77,7 @@ Computers that use only math equations get fooled by irrational human competitor
 * **The "Safe Deadline" Guard:** What if demand is slow and the dumper hasn't sold out?
   - The code assumes we can sell about 1.85 seats per day, so 80 seats need about 44 days. The holdout therefore stops at day 57 at the latest (never before day 55).
   - After the deadline, or whenever demand looks low, we contest the market just below the dumper (at most \$24, never under \$18).
-  - Real lesson (v3.0, `35zapi`): a rival at ~\$12 typically sold out only on day 98, and a holdout without a deadline sold **0 seats in 100 seasons**.
+  - Real lesson (v3.0, `35zapi`): a rival at ~\$12 sold out in only 72 of 100 seasons, at the median on day 98, and a holdout without a deadline sold **0 seats in 100 seasons**.
 
 ### Scenario B: The Low-Demand Alarm (a statistical test, not a fixed day)
 * **The Situation:** We are cheaper than the rival, yet hardly anyone buys.
