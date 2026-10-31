@@ -1,0 +1,38 @@
+{
+ "low_demand": {
+  "intercept": 0.1329,
+  "B": -0.0041,
+  "C": 0.0037,
+  "b_t": 0.176,
+  "avg_demand": 0.206,
+  "days": 566720,
+  "r2": 0.05,
+  "holdout_r2": 0.047,
+  "seasons": 5352,
+  "matches": 59
+ },
+ "average_demand": {
+  "intercept": 0.5927,
+  "B": -0.0064,
+  "C": 0.002,
+  "b_t": 0.5405,
+  "avg_demand": 0.69,
+  "days": 136130,
+  "r2": 0.037,
+  "holdout_r2": 0.04,
+  "seasons": 1397,
+  "matches": 35
+ },
+ "high_demand": {
+  "intercept": 1.0198,
+  "B": -0.0452,
+  "C": 0.0297,
+  "b_t": 0.7029,
+  "avg_demand": 0.785,
+  "days": 54720,
+  "r2": 0.129,
+  "holdout_r2": 0.128,
+  "seasons": 551,
+  "matches": 10
+ }
+}

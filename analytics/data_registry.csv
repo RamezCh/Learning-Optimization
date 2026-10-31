@@ -1,0 +1,74 @@
+dataset,file,competition_id,rival,seasons,seats_per_season,revenue_per_season,rival_median_price,rival_sold_out_pct,low,average,high,label,algorithm
+mlr,duopoly_competition_details.csv,44H6hk,RadiantMussel,100,44.9,1353.0,29.7,0.0,99,1,0,low,MLR variant
+mlr,duopoly_competition_details.csv,9ZyiCi,FierceDuck,100,19.7,503.0,19.9,1.0,99,1,0,low,MLR variant
+mlr,duopoly_competition_details.csv,WB9uo7,RadiantMussel,100,0.0,0.0,18.8,3.0,100,0,0,low,MLR variant
+mlr,duopoly_competition_details.csv,wk3bdR,AirborneTody,100,41.8,1062.0,25.0,0.0,100,0,0,low,MLR variant
+mlr,duopoly_competition_details.csv,yHpwtj,AirborneTody,100,35.3,884.0,25.0,0.0,100,0,0,low,MLR variant
+poisson_logit,duopoly_competition_details.csv,3JNhfA,SeriousLori,100,24.2,674.0,21.0,8.0,89,11,0,low,Poisson-logit variant
+poisson_logit,duopoly_competition_details.csv,4HzR7t,VersatileOrca,100,67.7,1777.0,30.0,0.0,2,65,33,average,Poisson-logit variant
+poisson_logit,duopoly_competition_details.csv,ZWEJEE,VersatileOrca,100,64.8,1722.0,30.0,0.0,2,77,21,average,Poisson-logit variant
+poisson_logit,duopoly_competition_details.csv,wk3bdR,ProficientCivet,100,42.4,1072.0,25.0,0.0,47,53,0,average,Poisson-logit variant
+poisson_logit,duopoly_competition_details.csv,yHpwtj,ProficientCivet,100,35.7,893.0,25.0,0.0,100,0,0,low,Poisson-logit variant
+v1,2026-10-14_day2_duopoly_competition_details.csv,3DRpAU,FuturisticSalamander,100,0.0,0.0,18.4,41.0,100,0,0,low,v1.0
+v1,2026-10-14_day2_duopoly_competition_details.csv,3PTJwD,UncoveredElephant,100,20.4,1329.0,46.1,91.0,100,0,0,low,v1.0
+v1,2026-10-14_day2_duopoly_competition_details.csv,3XkNYY,ZealousMosquito,100,0.0,0.0,54.8,0.0,100,0,0,low,v1.0
+v1,2026-10-14_day2_duopoly_competition_details.csv,3n5PCY,ZealousMosquito,100,0.0,0.0,55.1,0.0,100,0,0,low,v1.0
+v1,2026-10-14_day2_duopoly_competition_details.csv,D9Le8X,FuturisticSalamander,100,28.2,2036.0,69.8,13.0,99,1,0,low,v1.0
+v1,2026-10-14_day2_duopoly_competition_details.csv,HhTiQz,UncoveredElephant,100,0.0,0.0,85.0,11.0,100,0,0,low,v1.0
+v3,duopoly_competition_details.csv,35zapi,RussetBat,100,0.0,0.0,12.0,72.0,100,0,0,low,v3.0
+v3,duopoly_competition_details.csv,3Z9vTN,ScrupulousZebu,100,79.1,3110.0,38.1,62.0,0,100,0,average,v3.0
+v3,duopoly_competition_details.csv,3kGhWc,LoutishMacaque,100,47.9,1679.0,71.0,0.0,27,73,0,average,v3.0
+v3,duopoly_competition_details.csv,442yCr,ScrupulousZebu,100,79.4,3006.0,37.6,52.0,0,96,4,average,v3.0
+v3,duopoly_competition_details.csv,JKuahN,RussetBat,100,72.1,2147.0,32.0,75.0,5,30,65,high,v3.0
+v3,duopoly_competition_details.csv,PfqiTc,Winner_2023,100,79.1,3434.0,43.6,62.0,0,100,0,average,v3.0
+v3,duopoly_competition_details.csv,RJ39At,Winner_2023,100,79.1,3041.0,39.2,72.0,1,3,96,high,v3.0
+v4,duopoly_competition_details.csv,33XD3S,FierceDuck,100,79.5,3116.0,40.6,20.0,0,0,100,high,v4.1
+v4,duopoly_competition_details.csv,3EBjQX,FierceDuck,100,76.2,2375.0,34.4,38.0,0,5,95,high,v4.1
+v4,duopoly_competition_details.csv,3d8tDh,SageSloth,100,36.6,957.0,25.8,0.0,100,0,0,low,v4.1
+v4,duopoly_competition_details.csv,3dEw6i,PinkDuck,100,75.9,3302.0,38.8,100.0,0,100,0,average,v4.1
+v4,duopoly_competition_details.csv,3vG5Xe,PinkDuck,100,79.9,4131.0,43.3,100.0,0,100,0,average,v4.1
+v4,duopoly_competition_details.csv,PBMNQe,SageSloth,100,73.8,2924.0,39.0,85.0,0,100,0,average,v4.1
+v5,duopoly_competition_details.csv,3UmBuN,ImpartialGoldfish,100,78.0,3934.0,50.5,93.0,0,100,0,average,v5.0
+v5,duopoly_competition_details.csv,4BgGcS,ConvivialCrane,100,79.2,3404.0,51.0,0.0,0,90,10,average,v5.0
+v5,duopoly_competition_details.csv,7iXybz,ImpartialGoldfish,100,79.6,3568.0,50.5,0.0,0,0,100,high,v5.0
+v5,duopoly_competition_details.csv,Gq2CUL,ConvivialCrane,100,79.3,3416.0,51.2,0.0,0,73,27,average,v5.0
+v5.1,duopoly_competition_details_24_10_2026.csv,388BzM,StraightChameleon,100,39.3,1054.0,25.2,0.0,62,38,0,low,v5.1
+v5.1,duopoly_competition_details_24_10_2026.csv,3VJb6X,ScrupulousZebu,100,35.3,949.0,24.8,0.0,88,12,0,low,v5.1
+v5.1,duopoly_competition_details_24_10_2026.csv,cZEkvm,LoutishWorm,100,8.9,225.0,28.5,0.0,100,0,0,low,v5.1
+v5.1,duopoly_competition_details_24_10_2026.csv,eJVy2C,StraightChameleon,100,37.4,971.0,25.2,0.0,67,33,0,low,v5.1
+v5.1,duopoly_competition_details_24_10_2026.csv,fPVFcY,ScrupulousZebu,100,35.3,958.0,24.8,0.0,86,14,0,low,v5.1
+v5.1,duopoly_competition_details_24_10_2026.csv,ir5sM5,LoutishWorm,100,22.8,579.0,27.4,0.0,100,0,0,low,v5.1
+v6,AirborneTody_rank_12.csv,3DbvEe,SuperGoshawk,100,10.6,193.0,2.8,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,44y95q,UniqueCuscus,100,31.7,1104.0,49.9,0.0,98,2,0,low,v6.3
+v6,AirborneTody_rank_12.csv,4HEtgQ,HospitableBeaver,100,0.1,2.0,1.0,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,4RB8Qu,DidacticFlounder,100,42.2,1056.0,80.3,0.0,97,3,0,low,v6.3
+v6,AirborneTody_rank_12.csv,4SPA3D,DidacticFlounder,100,45.0,1189.0,80.3,0.0,32,68,0,average,v6.3
+v6,AirborneTody_rank_12.csv,85QmW2,VeganServal,100,1.2,22.0,10.0,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,CwKpRk,UniqueCuscus,100,35.0,1220.0,50.2,0.0,86,14,0,low,v6.3
+v6,AirborneTody_rank_12.csv,VCKsZ8,VersatileOrca,100,24.3,438.0,21.6,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,eFBHkY,VersatileOrca,100,31.6,629.0,22.5,0.0,95,5,0,low,v6.3
+v6,AirborneTody_rank_12.csv,gVUu45,HospitableBeaver,100,9.0,162.0,1.0,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,hgHrrj,VeganServal,100,12.4,224.0,10.0,0.0,100,0,0,low,v6.3
+v6,AirborneTody_rank_12.csv,zHQf9i,SuperGoshawk,100,10.0,182.0,2.9,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,39jdMo,FlashyInchworm,100,22.8,428.0,18.0,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,3GpvZa,TopazCat,100,0.0,1.0,0.1,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,3XSwZd,TopazCat,100,0.0,2.0,0.1,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,3XZqHo,ManipulativeJaybird,100,29.8,817.0,45.0,0.0,99,1,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,3rqaFR,FlashyInchworm,100,22.6,425.0,18.0,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,3xoUAW,PinkDuck,100,16.2,294.0,17.4,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,DskA5b,ImpossibleLadybug,100,43.2,1103.0,100.0,0.0,97,3,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,Poptqk,ImpossibleLadybug,100,10.9,210.0,100.0,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,QqWoDK,CarrotHyrax,100,27.4,680.0,54.9,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,RTJkgp,ManipulativeJaybird,100,18.4,441.0,45.0,0.0,100,0,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,VCjgDm,PinkDuck,100,25.0,525.0,17.4,0.0,96,4,0,low,v6.3
+v6,DeftDalmatian_rank_19.csv,XPtmhR,CarrotHyrax,100,37.5,1165.0,54.2,0.0,85,15,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,3K5jxB,GiftedChachalaca,100,0.3,6.0,24.8,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,3R5QD3,RadiantBird,100,3.2,57.0,1.0,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,3UQUb4,StoicCentipede,100,7.4,135.0,12.0,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,43T9zX,RadiantBird,100,8.9,163.0,1.0,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,4CNBe3,KickassMoth,100,12.7,230.0,14.8,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,78fi42,LoutishWorm,100,30.8,800.0,35.1,0.0,97,3,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,D4Z7Pd,StoicCentipede,100,21.5,404.0,16.0,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,UJ4kid,LoutishWorm,100,31.2,808.0,34.8,0.0,97,3,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,syPSWX,GiftedChachalaca,100,20.8,451.0,20.0,0.0,100,0,0,low,v6.3
+v6,ProficientCivet_rank_49.csv,yThfBp,KickassMoth,100,17.2,312.0,13.2,0.0,100,0,0,low,v6.3
