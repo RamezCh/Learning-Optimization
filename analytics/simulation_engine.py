@@ -134,6 +134,35 @@ class MarketDemandModel:
         return demand1, demand2
 
 
+class ChoiceDemandMarket(MarketDemandModel):
+    """
+    Market fitted to one tournament match (analytics/v6_testbed.py, analytics/v6_demand_fits.json).
+    Buyers per day ~ Poisson(n * exp(k * tau)); each buys from airline i with probability
+    e^{b(m - p_i)} / (1 + sum_j e^{b(m - p_j)}) over the airlines that still have seats
+    (m = willingness-to-pay midpoint, b = price sensitivity), otherwise buys nothing.
+    """
+    def __init__(self, theta: List[float], seed: Optional[int] = None):
+        super().__init__(seed=seed)
+        self.ln_n, self.ln_m, self.ln_b, self.k = (float(v) for v in theta)
+
+    def step(self, t: int, price1: float, price2: float, cap1: int, cap2: int) -> Tuple[int, int]:
+        if cap1 <= 0 and cap2 <= 0:
+            return 0, 0
+        tau = (t - 1) / 99.0
+        arrivals = self.rng.poisson(np.exp(self.ln_n + self.k * tau))
+        b, m = np.exp(self.ln_b), np.exp(self.ln_m)
+        demand1 = demand2 = 0
+        for _ in range(arrivals):
+            w1 = np.exp(np.clip(b * (m - price1), -50, 50)) if cap1 - demand1 > 0 else 0.0
+            w2 = np.exp(np.clip(b * (m - price2), -50, 50)) if cap2 - demand2 > 0 else 0.0
+            u = self.rng.random() * (1.0 + w1 + w2)
+            if u < w1:
+                demand1 += 1
+            elif u < w1 + w2:
+                demand2 += 1
+        return demand1, demand2
+
+
 # -------------------------------------------------------------------------
 # Competitor Agent Implementations
 # -------------------------------------------------------------------------
@@ -268,6 +297,15 @@ class OldV1Competitor(BaseCompetitor):
                     else:
                         return max(85.0, our_last_price - 2.0)
                 return 110.0
+
+
+class LastPriceCopier(BaseCompetitor):
+    """Sets its price to our price of the previous day (like FlashyInchworm in data/v6)."""
+    def __init__(self, first_price: float = 60.0):
+        self.first_price = first_price
+
+    def get_price(self, season, period, our_last_price, our_last_demand, rival_has_capacity) -> float:
+        return float(our_last_price) if (period > 1 and our_last_price is not None) else self.first_price
 
 
 class HistoricalCSVCompetitor(BaseCompetitor):

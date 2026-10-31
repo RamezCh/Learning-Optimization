@@ -550,14 +550,12 @@ streamlit run analytics/app.py
 ```
 
 #### Key Capabilities:
-1. **Interactive Cross-Competition Leaderboard:** Ranks performance across all 7 dataset editions (`v1`, `v3`, `v4`, `v5`, `v5.1`, `mlr`, `poisson_logit`) with revenue, win rate, load factor, and seat spoilage metrics.
-2. **Day-by-Day Simulation & Playback Studio:**
-   - Step through any historical match day-by-day (Periods 1 to 100) or watch auto-play with 3, 4, or 5-second pauses.
-   - Real-time visualization of:
-     - Our price vs. rival's price.
-     - Units sold by both players in each individual period.
-     - Cumulative capacity depletion against the convex Target Curve.
-     - Current selling season and macroeconomic regime diagnosis.
+1. **Dataset and match selection:** every dataset under `data/` (`v1`, `v3`, `v4`, `v5`, `v5.1`, `v6`, `mlr`, `poisson_logit`), then a rival and one of its matches, or a synthetic rival.
+2. **Day-by-day and season-by-season replay:**
+   - Two sources for a tournament match: **Simulation** (the current `duopoly.py` against the rival's logged prices) or **Tournament log** (what actually happened: our prices, the rival's prices and our sales as recorded; the logs do not contain the rival's sales).
+   - Simulation market: a `data/v6` match uses the demand model fitted to its own logs (`analytics/v6_demand_fits.json`; a copying rival is simulated as a copier); other matches use the generic simulated market, which the page says.
+   - Day controls (day 1, previous, slider, next, day 100), season controls (previous, season box, next, "open seasons at day 100" for season-by-season browsing), and auto-play at 1–5 s per day. Any day or season control stops auto-play.
+   - For the chosen day: both prices, our sales and revenue, the rival's sales (simulation only), seats left, revenue so far and the gap to the starting plan; charts of price, sales and seats left up to that day; a day table and a per-season table.
 3. **Capacity Utilization & Pacing Diagnostics:** Charts empirical capacity utilization against the theoretical Target Curve across all seasons.
 4. **WTP Distribution & Elasticity Profiler:** Analyzes conversion rates across price bands to diagnose market reservation ceilings.
 

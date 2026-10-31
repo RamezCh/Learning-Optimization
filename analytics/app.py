@@ -19,8 +19,12 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(ROOT_DIR)
 sys.path.append(os.path.dirname(__file__))
 
+import json
+
 import duopoly
 from simulation_engine import (
+    ChoiceDemandMarket,
+    LastPriceCopier,
     DuopolySimulator,
     CopycatCompetitor,
     AggressiveDumperCompetitor,
@@ -156,7 +160,7 @@ if not datasets:
 
 selected_dataset_key = st.sidebar.selectbox(
     "Dataset Version",
-    options=list(datasets.keys()),
+    options=sorted(datasets.keys()),
     index=0
 )
 
@@ -223,11 +227,41 @@ run_button = st.sidebar.button("Run Simulation", type="primary", width="stretch"
 # -----------------------------------------------------------------------------
 # MAIN APP EXECUTION
 # -----------------------------------------------------------------------------
-session_key = f"{selected_dataset_key}_{sim_mode}_{rival_display_name}_{getattr(historical_meta, '__getitem__', lambda x: '')('competition_id') if historical_meta else ''}_{n_seasons_to_sim}"
+# Market for the simulation. A data/v6 match has a demand model fitted to its own logs
+# (analytics/v6_testbed.py); every other case uses the generic simulated market.
+V6_FITS_PATH = os.path.join(ROOT_DIR, 'analytics', 'v6_demand_fits.json')
+V6_COPIERS = {'FlashyInchworm'}
+
+
+@st.cache_data
+def load_v6_fits() -> dict:
+    if not os.path.exists(V6_FITS_PATH):
+        return {}
+    with open(V6_FITS_PATH) as fh:
+        return json.load(fh)
+
+
+match_fit = load_v6_fits().get(historical_meta['competition_id']) if historical_meta else None
+if match_fit is not None:
+    theta = match_fit['theta']
+    market_caption = (f"Simulated in this match's fitted market (about {np.exp(theta[0]) * np.exp(theta[3] * np.arange(100) / 99.0).sum():.0f} buyers per season, "
+                      f"willingness-to-pay midpoint ${np.exp(theta[1]):.0f}), against the rival's logged prices"
+                      + (" (this rival copies our previous price, so it is simulated as a copier)."
+                         if match_fit['rival'] in V6_COPIERS else "."))
+    if match_fit['rival'] in V6_COPIERS:
+        first_price = float(df_dataset[df_dataset['competition_id'] == historical_meta['competition_id']]['price_competitor'].iloc[0])
+        competitor_agent = LastPriceCopier(first_price=first_price)
+elif historical_meta is not None:
+    market_caption = ("Simulated in the generic market (about 92 buyers per season), against the rival's logged prices. "
+                      "This is not the tournament's market: use 'Tournament log' to see what actually happened.")
+else:
+    market_caption = "Simulated in the generic market (about 92 buyers per season)."
+
+session_key = f"{selected_dataset_key}_{sim_mode}_{rival_display_name}_{historical_meta['competition_id'] if historical_meta else ''}_{n_seasons_to_sim}"
 
 if run_button or 'sim_result' not in st.session_state or st.session_state.get('last_session_key') != session_key:
     with st.spinner("Executing simulation..."):
-        market = MarketDemandModel(seed=42)
+        market = ChoiceDemandMarket(match_fit['theta'], seed=42) if match_fit is not None else MarketDemandModel(seed=42)
         simulator = DuopolySimulator(algorithm_func=duopoly.p, market_demand=market)
         res = simulator.run(competitor_agent, n_seasons=n_seasons_to_sim, competitor_name=rival_display_name)
         st.session_state['sim_result'] = res
@@ -300,245 +334,295 @@ tab_playback, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # -----------------------------------------------------------------------------
-# TAB 0: Interactive Day-by-Day Simulation & Playback
+# TAB 0: Day-by-Day / Season-by-Season Replay
 # -----------------------------------------------------------------------------
-with tab_playback:
-    st.markdown("### ⏱️ Day-by-Day Simulation & Playback")
-    st.caption("Inspect what happened one day at a time: track price, sales, and capacity for both airlines. Step manually or auto-play with 3–5 second pauses.")
+# All replay state lives in st.session_state under widget keys ("pb_season", "pb_day"):
+# buttons change it through callbacks, which run before the widgets are drawn, so the
+# slider and the season box always show the state (a widget with a key ignores value=).
+# The replay is drawn in a fragment: stepping redraws only this part of the page, and
+# auto-play re-runs only the fragment on a timer instead of sleeping in the main script.
 
-    # State initialization
-    if 'sim_day' not in st.session_state:
-        st.session_state['sim_day'] = 1
-    if 'sim_autoplay' not in st.session_state:
-        st.session_state['sim_autoplay'] = False
-    if 'sim_selected_season' not in st.session_state:
-        st.session_state['sim_selected_season'] = 1
+def logged_match_frame(df: pd.DataFrame, competition_id: str) -> pd.DataFrame:
+    """What actually happened in a tournament match, in the simulator's column layout.
+    The logs contain our sales only: rival sales and rival seats left are unknown (NaN)."""
+    sub = df[df['competition_id'] == competition_id].sort_values(['selling_season', 'selling_period'])
+    has_cap = sub['competitor_has_capacity'].astype(str).str.lower().isin(['true', '1', '1.0'])
+    rival_price = sub['price_competitor'].astype(float).where(sub['price_competitor'] < 200)
+    out = pd.DataFrame({
+        'season': sub['selling_season'].astype(int).values,
+        'period': sub['selling_period'].astype(int).values,
+        'our_price': sub['price'].astype(float).values,
+        'rival_price': rival_price.values,
+        'our_sales': sub['demand'].astype(int).values,
+        'rival_sales': np.nan,
+        'our_revenue': (sub['price'] * sub['demand']).astype(float).values,
+        'rival_revenue': np.nan,
+        'rival_capacity_remaining': np.nan,
+        'rival_sold_out': (~has_cap).astype(int).values,
+    })
+    sold_before = out.groupby('season')['our_sales'].cumsum()
+    out['our_capacity_remaining'] = 80 - sold_before
+    return out
 
-    # Controls Row 1: Season & Auto-Play Settings
-    col_s, col_pause_speed, col_ap_btn = st.columns([2, 1, 1.2])
-    with col_s:
-        chosen_season = st.selectbox(
-            "Select Season",
-            options=list(range(1, n_seasons_to_sim + 1)),
-            index=min(st.session_state['sim_selected_season'] - 1, n_seasons_to_sim - 1),
-            key="season_selector"
-        )
-        if chosen_season != st.session_state['sim_selected_season']:
-            st.session_state['sim_selected_season'] = chosen_season
-            st.session_state['sim_day'] = 1
 
-    with col_pause_speed:
-        pause_sec = st.selectbox(
-            "Auto-Play Pause",
-            options=[3, 4, 5],
-            index=0,
-            format_func=lambda s: f"{s} seconds"
-        )
+def _pb_init(n_seasons: int) -> None:
+    ss = st.session_state
+    ss.setdefault('pb_season', 1)
+    ss.setdefault('pb_day', 1)
+    ss.setdefault('pb_autoplay', False)
+    ss.setdefault('pb_last_tick', 0.0)
+    ss['pb_season'] = int(min(max(1, ss['pb_season']), n_seasons))
+    ss['pb_day'] = int(min(max(1, ss['pb_day']), 100))
 
-    with col_ap_btn:
-        st.write("")
-        st.write("")
-        if st.session_state['sim_autoplay']:
-            if st.button("⏸ Pause Auto-Play", type="secondary", use_container_width=True):
-                st.session_state['sim_autoplay'] = False
-                st.rerun()
+
+def _pb_step_day(delta: int) -> None:
+    ss = st.session_state
+    ss['pb_autoplay'] = False
+    ss['pb_day'] = int(min(100, max(1, ss['pb_day'] + delta)))
+
+
+def _pb_set_day(day: int) -> None:
+    st.session_state['pb_autoplay'] = False
+    st.session_state['pb_day'] = day
+
+
+def _pb_step_season(delta: int, n_seasons: int) -> None:
+    ss = st.session_state
+    ss['pb_autoplay'] = False
+    ss['pb_season'] = int(min(n_seasons, max(1, ss['pb_season'] + delta)))
+    ss['pb_day'] = 100 if ss.get('pb_jump_to_end') else 1
+
+
+def _pb_season_changed() -> None:
+    st.session_state['pb_autoplay'] = False
+    st.session_state['pb_day'] = 100 if st.session_state.get('pb_jump_to_end') else 1
+
+
+def _pb_stop_autoplay() -> None:
+    st.session_state['pb_autoplay'] = False
+
+
+def _pb_toggle_autoplay() -> None:
+    ss = st.session_state
+    ss['pb_autoplay'] = not ss['pb_autoplay']
+    if ss['pb_autoplay']:
+        if ss['pb_day'] >= 100:
+            ss['pb_day'] = 1
+        ss['pb_last_tick'] = time.time()
+
+
+def _card(column, label: str, value: str, note: str = "", color: str = "#0f172a") -> None:
+    """Small KPI card: label, value and a plain note (no up/down arrow)."""
+    column.markdown(f"""
+    <div class="kpi-card" style="padding: 12px 16px; margin-bottom: 10px;">
+        <div class="kpi-label">{label}</div>
+        <div class="kpi-value" style="font-size: 26px; color: {color};">{value}</div>
+        <div class="kpi-detail">{note}</div>
+    </div>""", unsafe_allow_html=True)
+
+
+def _target_remaining(days: np.ndarray, bend: float = 0.15) -> np.ndarray:
+    """Seats left on the starting plan, as in duopoly.py: tau = (t - 1) / 99."""
+    tau = (days - 1) / 99.0
+    return 80.0 * (1.0 - ((1.0 - bend) * tau + bend * tau ** 2))
+
+
+def draw_replay(view: pd.DataFrame, n_seasons: int, rival_known: bool, pause_sec: int) -> None:
+    ss = st.session_state
+
+    # Auto-play tick: the fragment re-runs every pause_sec seconds while auto-play is on.
+    if ss['pb_autoplay'] and time.time() - ss['pb_last_tick'] >= pause_sec * 0.9:
+        ss['pb_last_tick'] = time.time()
+        if ss['pb_day'] < 100:
+            ss['pb_day'] += 1
         else:
-            if st.button("▶ Start Auto-Play", type="primary", use_container_width=True, disabled=(st.session_state['sim_day'] >= 100)):
-                st.session_state['sim_autoplay'] = True
-                st.rerun()
+            ss['pb_autoplay'] = False
 
-    # Filter data for chosen season
-    season_data = df_sim[df_sim['season'] == st.session_state['sim_selected_season']].sort_values('period')
-    if len(season_data) == 0:
-        st.warning("No data found for this season.")
+    # Season navigation
+    c_prev, c_sel, c_next, c_end = st.columns([1, 2, 1, 1.6])
+    with c_prev:
+        st.write("")
+        st.button("◀ Season", width="stretch", disabled=ss['pb_season'] <= 1,
+                  on_click=_pb_step_season, args=(-1, n_seasons), key="pb_prev_season")
+    with c_sel:
+        st.selectbox("Season", options=list(range(1, n_seasons + 1)), key="pb_season",
+                     on_change=_pb_season_changed)
+    with c_next:
+        st.write("")
+        st.button("Season ▶", width="stretch", disabled=ss['pb_season'] >= n_seasons,
+                  on_click=_pb_step_season, args=(1, n_seasons), key="pb_next_season")
+    with c_end:
+        st.write("")
+        st.checkbox("Open seasons at day 100", key="pb_jump_to_end",
+                    help="Season-by-season view: jump straight to the end of each season.")
+
+    season_data = view[view['season'] == ss['pb_season']].sort_values('period')
+    if season_data.empty:
+        st.warning(f"No data for season {ss['pb_season']}.")
+        return
+
+    # Day navigation
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 5, 1, 1])
+    with c1:
+        st.button("⏮ Day 1", width="stretch", disabled=ss['pb_day'] <= 1,
+                  on_click=_pb_set_day, args=(1,), key="pb_first")
+    with c2:
+        st.button("◀ Day", width="stretch", disabled=ss['pb_day'] <= 1,
+                  on_click=_pb_step_day, args=(-1,), key="pb_prev")
+    with c3:
+        st.slider("Day", min_value=1, max_value=100, key="pb_day", on_change=_pb_stop_autoplay,
+                  label_visibility="collapsed")
+    with c4:
+        st.button("Day ▶", width="stretch", disabled=ss['pb_day'] >= 100,
+                  on_click=_pb_step_day, args=(1,), key="pb_next")
+    with c5:
+        st.button("Day 100 ⏭", width="stretch", disabled=ss['pb_day'] >= 100,
+                  on_click=_pb_set_day, args=(100,), key="pb_last")
+
+    day = ss['pb_day']
+    upto = season_data[season_data['period'] <= day]
+    row = upto.iloc[-1]
+    season_rev = float(season_data['our_revenue'].sum())
+    season_seats = int(season_data['our_sales'].sum())
+    our_cum_sales = int(upto['our_sales'].sum())
+    our_cum_rev = float(upto['our_revenue'].sum())
+    rival_out = bool(row['rival_sold_out'])
+    rival_price = row['rival_price']
+    rival_price_txt = "sold out" if (rival_out and pd.isna(rival_price)) else f"${rival_price:.2f}"
+    spread = (rival_price - row['our_price']) if pd.notna(rival_price) else np.nan
+    if pd.isna(spread):
+        spread_txt = "rival has no seats"
+    elif spread > 0:
+        spread_txt = f"we are ${spread:.2f} cheaper"
+    elif spread < 0:
+        spread_txt = f"rival is ${-spread:.2f} cheaper"
     else:
-        # Navigation Row 2: Step Buttons & Slider
-        col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1, 1, 4, 1])
-        
-        with col_nav1:
-            if st.button("⏮ Day 1", use_container_width=True, disabled=(st.session_state['sim_day'] <= 1)):
-                st.session_state['sim_day'] = 1
-                st.session_state['sim_autoplay'] = False
-                st.rerun()
+        spread_txt = "same price"
 
-        with col_nav2:
-            if st.button("◀ Previous", use_container_width=True, disabled=(st.session_state['sim_day'] <= 1)):
-                st.session_state['sim_day'] = max(1, st.session_state['sim_day'] - 1)
-                st.session_state['sim_autoplay'] = False
-                st.rerun()
+    st.markdown(f"""
+    <div style="background: #f1f5f9; border-radius: 8px; padding: 10px 16px; margin: 10px 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #2563eb; flex-wrap: wrap; gap: 8px;">
+        <div><strong style="font-size: 16px; color: #0f172a;">Season {ss['pb_season']} of {n_seasons} · Day {day} of 100</strong>
+        <span style="margin-left: 12px; font-size: 13px; color: #64748b;">Whole season: {season_seats} seats, ${season_rev:,.0f}</span></div>
+        <div><span style="font-size: 12px; font-weight: 700; color: #475569;">Rival seats:</span>
+        <span style="font-size: 12px; font-weight: 800; color: {'#b91c1c' if rival_out else '#047857'}; margin-left: 4px;">{'SOLD OUT (we have a monopoly)' if rival_out else 'IN STOCK'}</span></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        with col_nav3:
-            new_day = st.slider(
-                "Current Selling Period / Day",
-                min_value=1,
-                max_value=100,
-                value=st.session_state['sim_day'],
-                key="day_slider"
-            )
-            if new_day != st.session_state['sim_day']:
-                st.session_state['sim_day'] = new_day
-                st.session_state['sim_autoplay'] = False
-                st.rerun()
+    k1, k2, k3, k4 = st.columns(4)
+    _card(k1, "Our price today", f"${row['our_price']:.2f}", spread_txt, "#059669")
+    _card(k2, "Our seats sold today", f"{int(row['our_sales'])}", f"${row['our_revenue']:,.2f} revenue", "#059669")
+    _card(k3, f"Rival price ({rival_display_name})", rival_price_txt, "rival sold out" if rival_out else "rival has seats", "#e11d48")
+    if rival_known:
+        _card(k4, "Rival seats sold today", f"{int(row['rival_sales'])}", f"{int(row['rival_capacity_remaining'])} rival seats left", "#e11d48")
+    else:
+        _card(k4, "Rival seats sold today", "not logged", "tournament logs show our sales only", "#94a3b8")
 
-        with col_nav4:
-            if st.button("Next ▶", use_container_width=True, disabled=(st.session_state['sim_day'] >= 100)):
-                st.session_state['sim_day'] = min(100, st.session_state['sim_day'] + 1)
-                st.session_state['sim_autoplay'] = False
-                st.rerun()
+    k5, k6, k7 = st.columns(3)
+    plan_left = float(_target_remaining(np.array([day + 1]))[0]) if day < 100 else 0.0
+    gap = float(row['our_capacity_remaining']) - plan_left
+    _card(k5, "Our seats left", f"{int(row['our_capacity_remaining'])} / 80", f"{our_cum_sales} sold so far this season")
+    _card(k6, "Our revenue so far", f"${our_cum_rev:,.2f}", f"this season (whole season: ${season_rev:,.0f})")
+    _card(k7, "Gap to the starting plan", f"{gap:+.0f} seats", "behind plan" if gap > 0.5 else ("ahead of plan" if gap < -0.5 else "on plan"))
 
-        curr_day = st.session_state['sim_day']
-        day_row = season_data[season_data['period'] == curr_day]
-        
-        if len(day_row) > 0:
-            row = day_row.iloc[0]
+    days = upto['period'].values
+    fig, (ax_p, ax_d, ax_c) = plt.subplots(3, 1, figsize=(11, 7.2), sharex=True, dpi=130)
+    style_figure(fig, [ax_p, ax_d, ax_c])
+    ax_p.plot(days, upto['our_price'], color='#059669', linewidth=2.2, label='Our price (duopoly.py)')
+    ax_p.plot(days, upto['rival_price'], color='#ef4444', linewidth=1.8, linestyle='--', label=f'Rival ({rival_display_name})')
+    ax_p.scatter([day], [row['our_price']], color='#059669', s=70, zorder=5, edgecolors='#0f172a', label='Today')
+    if pd.notna(rival_price):
+        ax_p.scatter([day], [rival_price], color='#ef4444', s=70, zorder=5, edgecolors='#0f172a')
+    ax_p.set_xlim(0.5, 100.5)
+    ax_p.set_ylabel('Price ($)', fontsize=9, fontweight='bold')
+    ax_p.set_title(f"Season {ss['pb_season']}, days 1 to {day}", fontsize=11, fontweight='bold')
+    ax_p.legend(loc='upper right', fontsize=8)
 
-            # Compute cumulative stats up to current day
-            hist_up_to_day = season_data[season_data['period'] <= curr_day]
-            our_cum_sales = int(hist_up_to_day['our_sales'].sum())
-            rival_cum_sales = int(hist_up_to_day['rival_sales'].sum())
-            our_cum_rev = float(hist_up_to_day['our_revenue'].sum())
-            rival_cum_rev = float(hist_up_to_day['rival_revenue'].sum())
+    if rival_known:
+        ax_d.bar(days - 0.2, upto['our_sales'], width=0.4, color='#059669', label='Our seats sold')
+        ax_d.bar(days + 0.2, upto['rival_sales'], width=0.4, color='#ef4444', label='Rival seats sold')
+    else:
+        ax_d.bar(days, upto['our_sales'], width=0.6, color='#059669', label='Our seats sold')
+    ax_d.set_ylabel('Seats sold', fontsize=9, fontweight='bold')
+    ax_d.legend(loc='upper left', fontsize=8)
 
-            diff_p = row['rival_price'] - row['our_price']
-            diff_p_str = f"+${diff_p:.2f} (We are cheaper)" if diff_p > 0 else (f"-${abs(diff_p):.2f} (Rival is cheaper)" if diff_p < 0 else "Equal ($0.00)")
+    ax_c.plot(days, upto['our_capacity_remaining'], color='#059669', linewidth=2.2, label='Our seats left (end of day)')
+    if rival_known:
+        ax_c.plot(days, upto['rival_capacity_remaining'], color='#ef4444', linewidth=1.8, linestyle='--', label='Rival seats left')
+    all_days = np.arange(1, 101)
+    ax_c.plot(all_days, _target_remaining(all_days + 1), color='#2563eb', linestyle='-.', label='Starting plan (bend 0.15)')
+    ax_c.set_ylim(-2, 82)
+    ax_c.set_xlabel('Day', fontsize=9, fontweight='bold')
+    ax_c.set_ylabel('Seats left', fontsize=9, fontweight='bold')
+    ax_c.legend(loc='upper right', fontsize=8)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
-            # Day status pill
-            rival_stock_status = "SOLD OUT (Monopoly Mode)" if row['rival_capacity_remaining'] == 0 else "IN STOCK"
-            rival_tag_color = "#b91c1c" if row['rival_capacity_remaining'] == 0 else "#047857"
+    with st.expander("Day-by-day table (up to today)"):
+        cols = ['period', 'our_price', 'rival_price', 'our_sales', 'our_revenue', 'our_capacity_remaining']
+        names = ['Day', 'Our price ($)', 'Rival price ($)', 'Our seats sold', 'Our revenue ($)', 'Our seats left']
+        if rival_known:
+            cols += ['rival_sales', 'rival_capacity_remaining']
+            names += ['Rival seats sold', 'Rival seats left']
+        table = upto[cols].copy()
+        table.columns = names
+        st.dataframe(table.sort_values('Day', ascending=False), width="stretch", height=240)
 
-            st.markdown(f"""
-            <div style="background: #f1f5f9; border-radius: 8px; padding: 10px 16px; margin: 12px 0; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #2563eb;">
-                <div>
-                    <span style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: #475569;">Current Timeline:</span>
-                    <strong style="font-size: 16px; color: #0f172a; margin-left: 6px;">Season {st.session_state['sim_selected_season']} · Day {curr_day} of 100</strong>
-                    <span style="margin-left: 12px; font-size: 13px; color: #64748b;">(Progress: {curr_day}% completed)</span>
-                </div>
-                <div>
-                    <span style="font-size: 12px; font-weight: 700; color: #475569;">Rival Inventory:</span>
-                    <span style="font-size: 12px; font-weight: 800; color: {rival_tag_color}; background: #ffffff; padding: 3px 8px; border-radius: 4px; margin-left: 4px; border: 1px solid #cbd5e1;">{rival_stock_status}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+    with st.expander("Season by season (all seasons)"):
+        per_season = view.groupby('season').agg(seats=('our_sales', 'sum'), revenue=('our_revenue', 'sum'),
+                                                our_price=('our_price', 'mean'), rival_price=('rival_price', 'median'),
+                                                rival_sold_out=('rival_sold_out', 'max')).reset_index()
+        per_season.columns = ['Season', 'Our seats', 'Our revenue ($)', 'Our mean price ($)',
+                              'Rival median price ($)', 'Rival sold out']
+        per_season['Rival sold out'] = per_season['Rival sold out'].map({1: 'yes', 0: 'no'})
+        st.dataframe(per_season.round(2), width="stretch", height=260, hide_index=True)
 
-            # 4-KPI comparison cards: Prices & Demands for BOTH users
-            c_our_p, c_our_d, c_riv_p, c_riv_d = st.columns(4)
-            with c_our_p:
-                st.markdown(f"""
-                <div class="kpi-card" style="border-top: 3px solid #059669;">
-                    <div class="kpi-label">My Price (duopoly.py)</div>
-                    <div class="kpi-value" style="color: #059669;">${row['our_price']:.2f}</div>
-                    <div class="kpi-detail">Spread: <strong>{diff_p_str}</strong></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_our_d:
-                st.markdown(f"""
-                <div class="kpi-card" style="border-top: 3px solid #059669;">
-                    <div class="kpi-label">My Demand (Sold Today)</div>
-                    <div class="kpi-value" style="color: #059669;">{int(row['our_sales'])} <span style="font-size: 18px; color: #64748b;">seats</span></div>
-                    <div class="kpi-detail">Today Revenue: <strong>${row['our_revenue']:,.2f}</strong></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_riv_p:
-                st.markdown(f"""
-                <div class="kpi-card" style="border-top: 3px solid #e11d48;">
-                    <div class="kpi-label">Opponent Price ({rival_display_name})</div>
-                    <div class="kpi-value" style="color: #e11d48;">${row['rival_price']:.2f}</div>
-                    <div class="kpi-detail">Status: <strong>{'Active' if row['rival_capacity_remaining'] > 0 else 'Stock Depleted'}</strong></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_riv_d:
-                st.markdown(f"""
-                <div class="kpi-card" style="border-top: 3px solid #e11d48;">
-                    <div class="kpi-label">Opponent Demand (Sold Today)</div>
-                    <div class="kpi-value" style="color: #e11d48;">{int(row['rival_sales'])} <span style="font-size: 18px; color: #64748b;">seats</span></div>
-                    <div class="kpi-detail">Today Revenue: <strong>${row['rival_revenue']:,.2f}</strong></div>
-                </div>
-                """, unsafe_allow_html=True)
+    if ss['pb_autoplay']:
+        st.caption(f"Auto-play: next day in {pause_sec} s. Any day or season control stops it.")
 
-            # Cumulative Standing Row
-            st.markdown(f"""
-            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 18px; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
-                <div>
-                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">My Remaining Capacity:</span>
-                    <div style="font-size: 18px; font-weight: 800; color: #047857;">{int(row['our_capacity_remaining'])} / 80 seats <span style="font-size: 12px; font-weight: 600; color: #64748b;">({our_cum_sales} sold)</span></div>
-                </div>
-                <div>
-                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Opponent Remaining Capacity:</span>
-                    <div style="font-size: 18px; font-weight: 800; color: #e11d48;">{int(row['rival_capacity_remaining'])} / 80 seats <span style="font-size: 12px; font-weight: 600; color: #64748b;">({rival_cum_sales} sold)</span></div>
-                </div>
-                <div>
-                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">My Cumulative Revenue:</span>
-                    <div style="font-size: 18px; font-weight: 800; color: #047857;">${our_cum_rev:,.2f}</div>
-                </div>
-                <div>
-                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Opponent Cumulative Revenue:</span>
-                    <div style="font-size: 18px; font-weight: 800; color: #e11d48;">${rival_cum_rev:,.2f}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
 
-            # Real-time Trajectory Visualizations up to Day t
-            fig_sim, (ax_p, ax_d, ax_c) = plt.subplots(3, 1, figsize=(11, 7.5), sharex=True, dpi=140)
-            style_figure(fig_sim, [ax_p, ax_d, ax_c])
+with tab_playback:
+    st.markdown("### ⏱️ Day-by-Day and Season-by-Season Replay")
+    if historical_meta is not None:
+        replay_source = st.radio(
+            "Replay",
+            options=["Simulation: current duopoly.py in this match", "Tournament log: what actually happened"],
+            horizontal=True, key="pb_source",
+            help="The tournament log is the recorded match. It contains our sales only, not the rival's.",
+        )
+    else:
+        replay_source = "Simulation: current duopoly.py in this match"
+    use_log = replay_source.startswith("Tournament log")
+    if use_log:
+        view_df = logged_match_frame(df_dataset, historical_meta['competition_id'])
+        st.caption(f"Recorded match {historical_meta['competition_id']} from {selected_dataset_info['filename']}: "
+                   "our prices, the rival's prices and our sales exactly as logged.")
+    else:
+        view_df = df_sim
+        st.caption(market_caption)
+    view_seasons = int(view_df['season'].max())
+    replay_context = f"{session_key}|{replay_source}"
+    if st.session_state.get('pb_context') != replay_context:
+        # New match or source: start the replay at season 1, day 1.
+        st.session_state['pb_context'] = replay_context
+        st.session_state['pb_season'] = 1
+        st.session_state['pb_day'] = 100 if st.session_state.get('pb_jump_to_end') else 1
+        st.session_state['pb_autoplay'] = False
+    _pb_init(view_seasons)
 
-            p_days = hist_up_to_day['period'].values
-            p_our_prices = hist_up_to_day['our_price'].values
-            p_riv_prices = hist_up_to_day['rival_price'].values
-            p_our_sales = hist_up_to_day['our_sales'].values
-            p_riv_sales = hist_up_to_day['rival_sales'].values
-            p_our_caps = hist_up_to_day['our_capacity_remaining'].values
-            p_riv_caps = hist_up_to_day['rival_capacity_remaining'].values
+    c_pause, c_play = st.columns([1, 1.2])
+    with c_pause:
+        pause_sec = st.selectbox("Auto-play speed", options=[1, 2, 3, 4, 5], index=2, key="pb_pause",
+                                 format_func=lambda s: f"{s} s per day")
+    with c_play:
+        st.write("")
+        st.button("⏸ Pause auto-play" if st.session_state['pb_autoplay'] else "▶ Auto-play this season",
+                  type="secondary" if st.session_state['pb_autoplay'] else "primary",
+                  width="stretch", on_click=_pb_toggle_autoplay, key="pb_play")
 
-            # 1. Price trajectory
-            ax_p.plot(p_days, p_our_prices, color='#059669', linewidth=2.2, label='My Price (duopoly.py)')
-            ax_p.plot(p_days, p_riv_prices, color='#ef4444', linewidth=1.8, linestyle='--', label=f'Opponent ({rival_display_name})')
-            ax_p.scatter([curr_day], [row['our_price']], color='#059669', s=80, zorder=5, edgecolors='#0f172a', label='Today')
-            ax_p.scatter([curr_day], [row['rival_price']], color='#ef4444', s=80, zorder=5, edgecolors='#0f172a')
-            ax_p.set_xlim(0.5, 100.5)
-            ax_p.set_ylabel('Price ($)', fontsize=9, fontweight='bold')
-            ax_p.set_title(f"Real-Time Trajectory: Season {st.session_state['sim_selected_season']} (Day 1 to {curr_day})", fontsize=11, fontweight='bold')
-            ax_p.legend(loc='upper right', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
+    replay_fragment = st.fragment(draw_replay, run_every=pause_sec if st.session_state['pb_autoplay'] else None)
+    replay_fragment(view_df, view_seasons, not use_log, pause_sec)
 
-            # 2. Demand bars
-            bar_w = 0.38
-            ax_d.bar(p_days - bar_w/2, p_our_sales, width=bar_w, color='#059669', label='My Sales')
-            ax_d.bar(p_days + bar_w/2, p_riv_sales, width=bar_w, color='#ef4444', label='Opponent Sales')
-            ax_d.set_ylabel('Daily Demand', fontsize=9, fontweight='bold')
-            ax_d.legend(loc='upper left', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
-
-            # 3. Capacity curves
-            ax_c.plot(p_days, p_our_caps, color='#059669', linewidth=2.2, label='My Remaining Seats')
-            ax_c.plot(p_days, p_riv_caps, color='#ef4444', linewidth=1.8, linestyle='--', label='Opponent Remaining Seats')
-            tau_all = (np.arange(1, 101) - 1) / 100.0
-            target_rem = 80.0 * (1.0 - (0.85 * tau_all + 0.15 * (tau_all ** 2)))
-            ax_c.plot(np.arange(1, 101), target_rem, color='#2563eb', linestyle='-.', label='Pacing Target Curve')
-            ax_c.set_xlabel('Selling Period / Day', fontsize=9, fontweight='bold')
-            ax_c.set_ylabel('Seats Remaining', fontsize=9, fontweight='bold')
-            ax_c.legend(loc='upper right', fontsize=8, frameon=True, facecolor='#ffffff', edgecolor='#cbd5e1')
-
-            plt.tight_layout()
-            st.pyplot(fig_sim)
-            plt.close()
-
-            # Historical day table
-            with st.expander("📋 View Daily Breakdown Table (Up to Today)"):
-                table_df = hist_up_to_day[['period', 'our_price', 'rival_price', 'our_sales', 'rival_sales', 'our_revenue', 'rival_revenue', 'our_capacity_remaining', 'rival_capacity_remaining']].copy()
-                table_df.columns = ['Day', 'My Price ($)', 'Rival Price ($)', 'My Sold', 'Rival Sold', 'My Rev ($)', 'Rival Rev ($)', 'My Left', 'Rival Left']
-                st.dataframe(table_df.sort_values('Day', ascending=False), use_container_width=True, height=240)
-
-            # Auto-play loop handling
-            if st.session_state['sim_autoplay']:
-                if curr_day < 100:
-                    st.info(f"⏳ Auto-Play active: Pausing {pause_sec}s before advancing to Day {curr_day + 1}...")
-                    time.sleep(pause_sec)
-                    st.session_state['sim_day'] = curr_day + 1
-                    st.rerun()
-                else:
-                    st.session_state['sim_autoplay'] = False
-                    st.success("✅ Auto-Play completed! Reached Day 100.")
-                    st.rerun()
-
-# -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # TAB 1: Capacity Utilization Curves with Target Line
@@ -557,8 +641,7 @@ with tab1:
     top_pivot = util_pivot[top_seasons]
 
     periods_arr = np.arange(1, 101)
-    tau = (periods_arr - 1) / 100.0
-    target_utilization = 0.85 * tau + 0.15 * (tau ** 2)
+    target_utilization = 1.0 - _target_remaining(periods_arr + 1) / 80.0
 
     col_c1, col_c2, col_c3 = st.columns(3)
     with col_c1:
@@ -582,7 +665,7 @@ with tab1:
         mean_top_curve = top_pivot.mean(axis=1)
         ax.plot(periods_arr, mean_top_curve, color='#065f46', linewidth=2.0, linestyle=':', label='Top 20% Seasons')
 
-    ax.plot(periods_arr, target_utilization, color='#2563eb', linewidth=2.2, linestyle='-.', label='Target Curve: 80 * [0.85t + 0.15t²]')
+    ax.plot(periods_arr, target_utilization, color='#2563eb', linewidth=2.2, linestyle='-.', label='Starting plan: 0.85τ + 0.15τ² (bend learned per market since v6.2)')
 
     if show_rival:
         rival_pivot = df_sim.pivot(index='period', columns='season', values='rival_utilization')
@@ -738,9 +821,7 @@ with tab3:
     if show_rival_daily:
         ax_dc.plot(p_periods, season_slice['rival_capacity_remaining'], color='#ef4444', linestyle='--', linewidth=1.5, label='Opponent Seats')
     
-    tau_p = (p_periods - 1) / 100.0
-    target_rem = 80.0 * (1.0 - (0.85 * tau_p + 0.15 * (tau_p ** 2)))
-    ax_dc.plot(p_periods, target_rem, color='#2563eb', linestyle='-.', label='Target Remaining Seats')
+    ax_dc.plot(p_periods, _target_remaining(p_periods + 1), color='#2563eb', linestyle='-.', label='Starting plan (bend 0.15)')
     
     ax_dc.set_xlabel('Selling Period (1 to 100)', fontsize=9, fontweight='bold')
     ax_dc.set_ylabel('Seats Remaining', fontsize=9, fontweight='bold')
@@ -954,13 +1035,14 @@ with tab6:
 
     if run_tests_btn or st.session_state.get('ran_tests'):
         st.session_state['ran_tests'] = True
-        with st.spinner("Executing 15 unit tests..."):
+        with st.spinner("Running the unit tests..."):
             cmd = [sys.executable, "-m", "pytest", "-v", os.path.join(ROOT_DIR, "tests")]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             output = proc.stdout
 
         if proc.returncode == 0:
-            st.success("All 15 Unit Tests Passed.")
+            passed = output.strip().splitlines()[-1] if output.strip() else ""
+            st.success(f"All unit tests passed. {passed}")
         else:
             st.error("Test failures detected.")
 
