@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.3).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.4).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -32,7 +32,18 @@ Architectural Overview:
 5. Continuous Capacity Opportunity Shadow Cost (μ):
    Dynamic pacing without heuristic step-ladders:
    μ(t, c) smoothly discounts when behind schedule and extracts scarcity premium when ahead.
-6. Essential Game-Theoretic & Boundary Guardrails:
+6. Market Sizing & Copying Rivals (v6.4, from the data/v6 tournaments):
+   - A choice-demand model is fitted to this match's own sales (Poisson likelihood): buyers
+     arrive at n*exp(k*tau) per day and buy from us with probability
+     e^{b(m-p)} / (1 + e^{b(m-p)} + e^{b(m-r)}). It learns from zero-sale days too.
+   - Every day: expected demand for the rest of the season at revenue-maximising prices vs
+     seats left. If demand <= 90% of seats left, a seat has no scarcity value (mu = 0): price
+     = argmax p x expected seats, and the plan, the gap and the gap-driven guards are skipped.
+     Otherwise v6.3 prices as before.
+   - Copying rival (its price = our price yesterday on >= 80% of the days we moved): hold one
+     price for the season; between seasons step it up or down and keep the direction that
+     earned more per day.
+7. Essential Game-Theoretic & Boundary Guardrails:
    - Monopoly Forcing vs Volume Contesting against deep dumpers.
    - High-Rival Dynamic Ceiling ($26-$48) preventing consumer dead zones.
    - Terminal Clearance Acceleration at t >= 90 (perishable $0 salvage value).
@@ -42,6 +53,7 @@ Architectural Overview:
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from scipy.optimize import minimize
 
 # -----------------------------------------------------------------------------
 # Domain Constants
@@ -58,6 +70,33 @@ DEFAULT_RIVAL_PRICE: float = 50.0
 MIN_OBSERVATIONS_FOR_TRAINING: int = 80
 TRAINING_WINDOW_SIZE: int = 2500
 LOW_SALES_SEASON_THRESHOLD: int = 42
+
+# v6.4: market-sized pricing. When this market cannot fill the plane, a seat has no scarcity
+# value (mu = 0) and the price only has to maximise price x expected seats.
+CAPACITY_SLACK: float = 0.9              # mu = 0 when expected demand <= 90% of seats left
+UNCONSTRAINED_FLOOR: float = 18.0        # lowest price in market-sized mode
+HIGH_RIVAL_CAP: float = 48.0             # never price above this when the rival is >= $58
+# v6.4: copying rival. Rival's price today equals our price yesterday.
+COPIER_TOLERANCE: float = 0.6            # $ difference counted as a copy
+COPIER_WINDOW: int = 20                  # informative days kept (days our price moved)
+COPIER_SHARE: float = 0.8                # share of copies needed to call the rival a copier
+COPIER_PRICE_RANGE: Tuple[float, float] = (18.0, 60.0)
+COPIER_FIRST_STEP: float = 3.0           # $ change of the held price between seasons
+COPIER_MIN_STEP: float = 1.0
+COPIER_MIN_DAYS: int = 30                # days held in a season before its revenue counts
+# v6.4: choice-demand model used in market-sized mode. Each day ~ Poisson(n*exp(k*tau)) buyers
+# arrive; each buys from us with probability e^{b(m-p)} / (1 + e^{b(m-p)} + e^{b(m-r)})
+# (m = willingness-to-pay midpoint, b = price sensitivity). Unlike the linear model it can
+# learn from days with zero sales. Weak priors (penalty weights) keep it identified early on.
+LOGIT_PRIOR: Tuple[float, float, float, float] = (np.log(0.35), np.log(35.0), np.log(0.25), 0.6)
+LOGIT_PRIOR_WEIGHT: Tuple[float, float, float, float] = (1.0, 1.0, 5.0, 5.0)
+LOGIT_WINDOW: int = 3000
+LOGIT_REFIT_EVERY: int = 25            # in-season refit interval (days)
+# Zero sales at high prices cannot tell "few buyers" from "buyers won't pay this much", and only
+# the second lowers the best price. So after 7 days without a sale, cut $1 per extra dry day:
+# sales at lower prices then teach the model where the buyers are.
+DRY_DAYS_ALLOWED: int = 7
+DRY_DAY_CUT: float = 1.0
 
 # Identified demand-slope guards (see _solve_closed_form_optimal_price)
 MAX_OWN_SLOPE_B: float = -0.006   # own-price slope B must be at most this (demand falls with price)
@@ -170,6 +209,12 @@ def p(
         state.get("target_c_now", TARGET_C_DEFAULT)
     )
 
+    # 5b. v6.4: refresh the demand model every 25 days, then ask whether capacity binds:
+    # expected demand for the rest of the season at revenue-maximising prices vs seats left.
+    if period % LOGIT_REFIT_EVERY == 0:
+        _fit_logit_demand(state)
+    state["unconstrained"] = _capacity_is_slack(period, remaining_capacity, state)
+
     # 6. Pricing Decision Engine (Monopoly vs Duopoly Regimes)
     if not competitor_has_capacity_current_period_in_current_season:
         raw_price = _calculate_monopoly_price(
@@ -233,6 +278,13 @@ def _initialize_or_get_state(
         "detected_regime": "average_demand",
         "target_c_obs": [],                # fitted bend of each season that sold >= 75 seats
         "target_c_now": TARGET_C_DEFAULT,  # bend used this season
+        "unconstrained": False,            # v6.4: this market cannot fill the plane
+        "copy_checks": [],                 # v6.4: 1 = rival copied our previous price
+        "logit_theta": list(LOGIT_PRIOR),  # v6.4: [ln n, ln m, ln b, k] of the choice model
+        "copier_hold": None,               # v6.4: held price vs a copying rival + search state
+        "copier_rev": 0.0,                 # v6.4: revenue earned this season while holding
+        "copier_days": 0,                  # v6.4: days held this season
+        "dry_days": 0,                     # v6.4: days in a row without a sale (this season)
     }
 
 
@@ -263,6 +315,7 @@ def _handle_season_transition(
     state["low_demand_llr"] = 0.0
     state["low_demand_obs"] = 0
     state["low_demand_in_season"] = False
+    state["dry_days"] = 0
 
 
 def _handle_end_of_season(
@@ -300,6 +353,9 @@ def _handle_end_of_season(
         season_bend = _fit_season_target_bend(demand_history)
         if season_bend is not None:
             state.setdefault("target_c_obs", []).append(season_bend)
+
+    _fit_logit_demand(state)
+    _update_copier_hold(state)
 
     _classify_and_update_regime(state)
     _fit_online_regression(state)
@@ -478,6 +534,25 @@ def _update_real_time_signals(
             my_prev_price, price_diff, norm_t, last_demand
         ])
 
+        # v6.4 copier check: does the rival's price equal our price the day before?
+        # Only days on which we changed our price are informative (two flat prices match trivially).
+        if (
+            isinstance(prices_history, np.ndarray) and prices_history.ndim == 2
+            and prices_history.shape[1] >= 3
+        ):
+            own = prices_history[0, :]
+            if abs(own[-2] - own[-3]) > 0.3:
+                checks = state.setdefault("copy_checks", [])
+                checks.append(1 if abs(latest_rival_price - own[-2]) <= COPIER_TOLERANCE else 0)
+                if len(checks) > COPIER_WINDOW:
+                    checks.pop(0)
+
+        state["dry_days"] = 0 if last_demand > 0 else state.get("dry_days", 0) + 1
+
+        if _rival_is_copier(state):
+            state["copier_rev"] = state.get("copier_rev", 0.0) + my_prev_price * last_demand
+            state["copier_days"] = state.get("copier_days", 0) + 1
+
         # Track price-demand conversion by bucket
         bucket = int(round(my_prev_price / 5.0) * 5)
         stats = state["price_demand_stats"].get(bucket, [0.0, 0])
@@ -610,6 +685,11 @@ def _calculate_duopoly_price(
     is_low_demand = state.get("detected_low_demand", False)
     is_low_wtp = state.get("detected_low_wtp", False)
 
+    # Branch 0 (v6.4): market-sized pricing or a copying rival. Capacity does not bind, so the
+    # plan, the gap and the gap-driven guards below do not apply.
+    if _rival_is_copier(state) or _is_unconstrained(state):
+        return _calculate_revenue_max_price(period, latest_rival_price, state)
+
     # Branch 1: Low-Sales Circuit Breaker (only against a cheap rival, v6.3)
     # After 2+ weak seasons, undercut a rival priced < $38. Against an expensive rival this
     # rule priced us just under it, above what customers would pay, so we sold nothing and
@@ -673,6 +753,116 @@ def _calculate_duopoly_price(
         )
 
     return target_price
+
+
+def _is_unconstrained(state: Dict[str, Any]) -> bool:
+    """v6.4: True when capacity does not bind today (see _capacity_is_slack)."""
+    return bool(state.get("unconstrained", False))
+
+
+def _capacity_is_slack(period: int, remaining_capacity: int, state: Dict[str, Any]) -> bool:
+    """
+    v6.4: market sizing. Using the choice model fitted to this match, price every remaining day
+    at its revenue-maximising price (rival assumed to keep yesterday's price) and add up the
+    expected seats. If that is at most 90% of the seats left, a seat has no scarcity value
+    (mu = 0). Needs a fitted model (>= 80 observations); until then v6.3 decides.
+    """
+    if not state.get("logit_fitted", False):
+        return False
+    theta = state["logit_theta"]
+    rival = state.get("rival_last_price", DEFAULT_RIVAL_PRICE)
+    taus = (np.arange(period, TOTAL_SELLING_PERIODS + 1) - 1) / float(TOTAL_SELLING_PERIODS - 1)
+    grid = np.arange(UNCONSTRAINED_FLOOR, MAX_PRICE + 0.01, 1.0)
+    rates = _logit_rate(theta, grid[:, None], rival, taus[None, :])
+    best = np.argmax(grid[:, None] * rates, axis=0)
+    expected_demand = float(rates[best, np.arange(len(taus))].sum())
+    return expected_demand <= CAPACITY_SLACK * remaining_capacity
+
+
+def _rival_is_copier(state: Dict[str, Any]) -> bool:
+    """v6.4: True when the rival set its price to our previous price on >= 80% of recent checks."""
+    checks = state.get("copy_checks", [])
+    return len(checks) >= 10 and float(np.mean(checks)) >= COPIER_SHARE
+
+
+def _logit_rate(theta: List[float], price, rival, tau):
+    """Expected seats per day for us under the choice model (vectorised)."""
+    ln_n, ln_m, ln_b, k = theta
+    b, m = np.exp(ln_b), np.exp(ln_m)
+    ours = np.exp(np.clip(b * (m - price), -50.0, 50.0))
+    theirs = np.exp(np.clip(b * (m - rival), -50.0, 50.0))
+    return np.exp(ln_n + k * tau) * ours / (1.0 + ours + theirs)
+
+
+def _fit_logit_demand(state: Dict[str, Any]) -> None:
+    """v6.4: Poisson maximum likelihood fit of the choice model on our own sales history."""
+    history = state.get("training_history", [])
+    if len(history) < MIN_OBSERVATIONS_FOR_TRAINING:
+        return
+    try:
+        data = np.array(history[-LOGIT_WINDOW:], dtype=float)
+        price, rival, tau, sold = data[:, 0], data[:, 0] + data[:, 1], data[:, 2], data[:, 3]
+        prior = np.array(LOGIT_PRIOR)
+        weight = np.array(LOGIT_PRIOR_WEIGHT)
+
+        def neg_log_lik(theta):
+            lam = _logit_rate(theta, price, rival, tau) + 1e-12
+            return float(-(sold * np.log(lam) - lam).sum() + (weight * (theta - prior) ** 2).sum())
+
+        start = np.array(state.get("logit_theta", LOGIT_PRIOR), dtype=float)
+        result = minimize(neg_log_lik, start, method="Nelder-Mead",
+                          options={"maxiter": 400, "xatol": 1e-4, "fatol": 1e-3})
+        if np.all(np.isfinite(result.x)):
+            state["logit_theta"] = [float(v) for v in result.x]
+            state["logit_fitted"] = True
+    except Exception:
+        pass
+
+
+def _update_copier_hold(state: Dict[str, Any]) -> None:
+    """
+    v6.4: season-to-season search for the best price to hold against a copying rival.
+    Each season's revenue per day at the held price is a direct measurement (the rival always
+    matches us), so no demand model is needed: keep moving in the direction that earned more,
+    turn around and take smaller steps when it earned less.
+    """
+    hold = state.get("copier_hold")
+    days, rev = state.get("copier_days", 0), state.get("copier_rev", 0.0)
+    state["copier_rev"], state["copier_days"] = 0.0, 0
+    if hold is None or days < COPIER_MIN_DAYS:
+        return
+    rate = rev / days
+    if hold["best_rev"] is None or rate >= hold["best_rev"]:
+        hold["best_rev"], hold["best_price"] = rate, hold["price"]
+    else:
+        hold["direction"] = -hold["direction"]
+        hold["step"] = max(COPIER_MIN_STEP, hold["step"] * 0.6)
+    hold["price"] = float(np.clip(hold["best_price"] + hold["direction"] * hold["step"], *COPIER_PRICE_RANGE))
+
+
+def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[str, Any]) -> float:
+    """
+    v6.4: price that maximises price x expected seats when capacity does not bind (mu = 0),
+    using the choice model fitted to this match. Against a copying rival the rival's price
+    equals ours, so we maximise p x seats(p, r = p) and hold that price.
+    """
+    theta = state.get("logit_theta", list(LOGIT_PRIOR))
+    tau = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
+    grid = np.arange(UNCONSTRAINED_FLOOR, MAX_PRICE + 0.01, 0.5)
+    if _rival_is_copier(state):
+        hold = state.get("copier_hold")
+        if hold is None:
+            # First season against a copier: start from the choice model's best common price.
+            revenue = grid * _logit_rate(theta, grid, grid, 0.5)
+            start = float(np.clip(grid[int(np.argmax(revenue))], *COPIER_PRICE_RANGE))
+            hold = {"price": start, "best_price": None, "best_rev": None,
+                    "direction": -1.0, "step": COPIER_FIRST_STEP}
+            state["copier_hold"] = hold
+        return float(hold["price"])
+    revenue = grid * _logit_rate(theta, grid, rival_price, tau)
+    price = float(grid[int(np.argmax(revenue))])
+    dry_cut = DRY_DAY_CUT * max(0, state.get("dry_days", 0) - DRY_DAYS_ALLOWED)
+    return max(UNCONSTRAINED_FLOOR, price - dry_cut)
 
 
 def _get_recent_rival_average(state: Dict[str, Any], fallback: float) -> float:
@@ -775,6 +965,8 @@ def _clamp_price(price: float, state: Optional[Dict[str, Any]] = None) -> float:
         if (state and (state.get("detected_low_demand", False) or state.get("consecutive_low_sales", 0) >= 1))
         else MIN_PRICE
     )
+    if state and _is_unconstrained(state) and not _rival_is_copier(state):
+        min_p = min(min_p, UNCONSTRAINED_FLOOR)
     return float(np.clip(price, min_p, MAX_PRICE))
 
 

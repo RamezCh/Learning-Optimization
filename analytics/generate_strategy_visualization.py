@@ -1,7 +1,7 @@
 """
 analytics/generate_strategy_visualization.py
 ---------------------------------------------
-Strategy figure for duopoly.py (v6.3). Every panel is computed, not drawn by hand:
+Strategy figure for duopoly.py (v6.4). Every panel is computed, not drawn by hand:
 
 1. Panel 1: one simulated season of duopoly.py against a high-priced rival (~$70) in the
    low-demand market (valuations $20-$48), including the day the in-season low-demand
@@ -137,7 +137,7 @@ def create_visualization(output_path: Optional[str] = None) -> str:
     # Panel 1: price trajectory
     ax = axes[0]
     ax.plot(season.period, season.rival_price, color=COLORS['rival'], linestyle='--', linewidth=2, label='Rival price (~$70)')
-    ax.plot(season.period, season.price, color=COLORS['ours'], linewidth=2.6, label='duopoly.py v6.3 price')
+    ax.plot(season.period, season.price, color=COLORS['ours'], linewidth=2.6, label='duopoly.py v6.4 price')
     sold = season[season.our_sales > 0]
     ax.scatter(sold.period, sold.price, s=14 + 18 * sold.our_sales, color=COLORS['dark'], zorder=5,
                label='Periods with sales (size = seats)')

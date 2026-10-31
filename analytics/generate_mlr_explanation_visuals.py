@@ -1,7 +1,7 @@
 """
 analytics/generate_mlr_explanation_visuals.py
 ---------------------------------------------
-Explanation figure for duopoly.py (v6.3). Every curve is computed with the functions and
+Explanation figure for duopoly.py (v6.4). Every curve is computed with the functions and
 constants inside duopoly.py, so the picture always matches the code:
 
 1. Panel 1: the "revenue hill" (p - mu) * (A + B*p) for the average-demand prior, with the

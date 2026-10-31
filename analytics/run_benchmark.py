@@ -1,7 +1,7 @@
 """
 run_benchmark.py
 ----------------
-Automated benchmark and visualization suite for testing duopoly.py (v6.3).
+Automated benchmark and visualization suite for testing duopoly.py (v6.4).
 Single seed (42) per scenario; use benchmark_3regime_models.py for multi-seed confidence intervals.
 Runs full 100-season simulations against:
 1. Copycat Competitor (mirrors our price)
@@ -61,7 +61,7 @@ def save_comparison_chart(results: List[Dict[str, Any]], chart_path: str = 'imgs
     our_rev = (df['our_total_revenue'] / 1000.0).values
     rival_rev = (df['rival_total_revenue'] / 1000.0).values
 
-    b1 = ax1.bar(x - width/2, our_rev, width, label='duopoly.py (v6.3)', color='#10b981', edgecolor='#047857')
+    b1 = ax1.bar(x - width/2, our_rev, width, label='duopoly.py (v6.4)', color='#10b981', edgecolor='#047857')
     b2 = ax1.bar(x + width/2, rival_rev, width, label='Opponent Total Revenue', color='#94a3b8', edgecolor='#475569')
 
     ax1.set_title('Panel 1: Total Revenue ($k) over 100 Seasons (simulator, seed 42)', fontsize=12, fontweight='bold', pad=12)
@@ -116,7 +116,7 @@ def save_comparison_chart(results: List[Dict[str, Any]], chart_path: str = 'imgs
 
 def run_all_benchmarks(csv_path: Optional[str] = None, generate_chart: bool = True):
     print("\n" + "="*80)
-    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py (v6.3)")
+    print(" DPC ALGORITHM BENCHMARK SUITE: EVALUATING duopoly.py (v6.4)")
     print("="*80)
 
     # 1. Target v1 dataset specifically for historical match replay

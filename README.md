@@ -365,12 +365,12 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 ---
 
-## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.3)
+## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.4)
 
 > [!IMPORTANT]
-> For the full history (`v1.0` → `v6.3`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve. v6.3 (§19) tests every part by switching it off, fixes a circuit-breaker bug found that way, and removes the regime priors of the target curve.
+> For the full history (`v1.0` → `v6.4`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve. v6.3 (§19) tests every part by switching it off, fixes a circuit-breaker bug found that way, and removes the regime priors of the target curve. v6.4 (§20) follows the first tournaments run with v6.3 (`data/v6`), where markets were far too small to fill 80 seats: when capacity cannot bind it prices for revenue only, and it holds one price against a rival that copies us (§4.7 below).
 
-`duopoly.py` combines a **closed-form price from a linear demand regression** with a small set of **guards** for situations where the regression is unreliable (cheap or very expensive rivals, monopoly, the last days of a season).
+`duopoly.py` combines a **closed-form price from a linear demand regression** with a small set of **guards** for situations where the regression is unreliable (cheap or very expensive rivals, monopoly, the last days of a season). Since v6.4 it first asks whether capacity can bind at all: if the market cannot fill the plane, or the rival copies our price, it switches to **market-sized pricing** (μ = 0) with a choice-demand model fitted to the match.
 
 ```mermaid
 flowchart TD
@@ -378,7 +378,10 @@ flowchart TD
     SoldOut -- "YES" --> P130["Post $130 (no seats to sell)"]
     SoldOut -- "NO" --> Rival{"Rival has seats?"}
     Rival -- "NO (monopoly)" --> Mono["Monopoly band by regime<br/>price falls linearly as burn rate rises 0.3 → 1.2"]
-    Rival -- "YES" --> CB{"2+ consecutive seasons < 42 seats<br/>and rival < $38?"}
+    Rival -- "YES" --> Slack{"Rival copies our price, or expected demand<br/>at revenue-max prices ≤ 90% of seats left?"}
+    Slack -- "YES (μ = 0)" --> Rev["Copier: hold one price, searched season to season<br/>Otherwise: argmax p · seats(p) from the fitted choice model<br/>(−$1 per day after 7 days without a sale)"]
+    Rev --> Clamp
+    Slack -- "NO" --> CB{"2+ consecutive seasons < 42 seats<br/>and rival < $38?"}
     CB -- "YES" --> Breaker["Circuit breaker:<br/>undercut rival by $0.50"]
     CB -- "NO" --> Deep{"Rival ≤ $19.50?"}
     Deep -- "YES" --> Hold["Hold $58 until safe deadline<br/>(not in low demand), else contest ≥ $18"]
@@ -386,7 +389,7 @@ flowchart TD
     MLR --> G1["Cheap rival (< $38): floor at min(rival − 0.5, 28)"]
     G1 --> G2["Rival ≥ $58: cap at clip(46 − 1.5·gap, 26, 48)<br/>else cap $64 ($48 if low WTP) when behind pace"]
     G2 --> G3["t ≥ 75: late-season rules<br/>(price below a high rival, capped $58 / $52;<br/>clearance discount when behind pace or t ≥ 90)"]
-    G3 --> Clamp["Clamp to [$25 ($18 in low demand), $100]"]
+    G3 --> Clamp["Clamp to [$25 ($18 in low demand or market-sized mode), $100]"]
 ```
 
 | Component | What the code does | Why |
@@ -399,6 +402,8 @@ flowchart TD
 | **5. In-season low-demand test** | SPRT on periods where we were cheaper than an in-stock rival at ≤ \$55 (see §4.2). Resets each season. | v6.0's "4 zero-sale days" rule fired in 44% of good seasons. |
 | **6. Monopoly pricing** | Band per regime (low \$28–\$44, average \$48–\$72, high \$50–\$66; skim price capped at \$60 if WTP looks truncated). Price falls linearly as the burn rate rises from 0.3 to 1.2. | v6.0 always returned the floor (\$46/\$50) because the band's top was below its floor. |
 | **7. Guards** | Cheap-rival floor, high-rival ceiling (\$26–\$48 when rival ≥ \$58), late-season rules, terminal clearance at $t \ge 90$, deep-dumper holdout with a safe deadline, two-season circuit breaker (only against a rival under \$38, since v6.3). | Situations where a linear demand model fitted on our own history is not trustworthy. |
+| **8. Market sizing (v6.4)** | A choice-demand model is fitted to our own sales at every season end and every 25 days: buyers per day $\sim \text{Poisson}(n e^{k\tau})$, each buying from us with probability $\frac{e^{b(m-p)}}{1 + e^{b(m-p)} + e^{b(m-r)}}$. Every day: price each remaining day at its revenue-maximising price and add up the expected seats. If that is ≤ 90% of the seats left, μ = 0 and the price is $\arg\max_p\ p \cdot \text{seats}(p, r, \tau)$ (\$18–\$100); the target curve and the gap-driven guards are skipped. After 7 days without a sale, −\$1 per extra dry day. | In `data/v6` no market could fill 80 seats; chasing the plan pushed v6.3 to \$18–\$26 everywhere. Unlike the linear model, the choice model also learns from days with zero sales. |
+| **9. Copying rival (v6.4)** | Copier = rival's price within \$0.60 of our previous day's price on ≥ 80% of the last 20 days on which we moved. Hold one price all season, no clearance; between seasons move it \$3 up or down and keep the direction that earned more per day (smaller steps after a drop). | FlashyInchworm copied us on 99% of days; v6.3's clearance dragged both to \$18 for 99 seasons. |
 
 ### 4.1 Regime priors
 
@@ -439,11 +444,11 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 
 ### 4.4 Strategy figures
 
-![duopoly.py v6.3 strategy](imgs/dpc_strategy_visualization.png)
+![duopoly.py v6.4 strategy](imgs/dpc_strategy_visualization.png)
 
 *(Generated by `analytics/generate_strategy_visualization.py`.)*
 
-* **Panel 1:** a simulated season against a ~\$70 rival in the low-demand market (valuations \$20–\$48). The SPRT fires on day 19; the high-rival ceiling then holds the price at its \$26 minimum until late-season clearance.
+* **Panel 1:** a simulated first season (where v6.4 still behaves like v6.3, because the choice model needs 80 observations) against a ~\$70 rival in the low-demand market (valuations \$20–\$48). The SPRT fires on day 19; the high-rival ceiling then holds the price at its \$26 minimum until late-season clearance.
 * **Panel 2:** the same season's realized remaining seats against the target curve. This season stays behind pace, which is why the late clearance discount kicks in.
 * **Panel 3:** the detector calibration from §4.2.
 
@@ -457,23 +462,23 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 
 ![Learned target curve](imgs/learned_target_curve.png)
 
-*(Generated by `analytics/generate_learned_target_plot.py`.)* Left: average real booking curves of the seasons with 75+ seats in `3UmBuN` (books early) and `Gq2CUL` (books late), with the plan each one teaches (bend 0.01 and 0.82) and the old fixed plan (0.15). By day 50 the fixed plan expects 37 seats; `Gq2CUL` averaged 24 and still sold out. Right: the bend `duopoly.py` uses season by season in the three simulated markets. In the low market it stays at 0.15 (no season reaches 75 seats); in the average and high markets it rises towards the 0.8 limit.
+*(Generated by `analytics/generate_learned_target_plot.py`.)* Left: average real booking curves of the seasons with 75+ seats in `3UmBuN` (books early) and `Gq2CUL` (books late), with the plan each one teaches (bend 0.01 and 0.82) and the old fixed plan (0.15). By day 50 the fixed plan expects 37 seats; `Gq2CUL` averaged 24 and still sold out. Right: the bend `duopoly.py` uses season by season in the three simulated markets. In the average and high markets it rises towards the 0.8 limit. In the low market it stayed at 0.15 under v6.3 (no season reached 75 seats); with v6.4 a few seasons reach 75 seats, so it rises to about 0.5.
 
 ### 4.5 Benchmark results (simulation)
 
 `python analytics/benchmark_3regime_models.py --compare <old_duopoly.py>` runs 3 simulated markets × 4 rivals × 5 seeds × 30 seasons. Mean revenue per season, summed over the 4 rivals:
 
-| Market (simulated) | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| Low (~68 arrivals, WTP \$20–\$48) | **\$4,059** | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
-| Average (~95 arrivals, WTP \$35–\$92) | \$8,164 | **\$8,192** | \$7,840 | \$7,787 | \$5,286 |
-| High (~135 arrivals, WTP \$25–\$78) | \$10,045 | **\$10,055** | \$9,758 | \$9,838 | \$5,547 |
+| Market (simulated) | v6.4 | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Low (~68 arrivals, WTP \$20–\$48) | **\$4,617** | \$4,059 | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
+| Average (~95 arrivals, WTP \$35–\$92) | **\$8,889** | \$8,164 | \$8,192 | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals, WTP \$25–\$78) | **\$10,220** | \$10,045 | \$10,055 | \$9,758 | \$9,838 | \$5,547 |
 
-95% confidence intervals per cell are printed by the script, typically ±\$15–\$75 per rival. The naive strategy does better against the aggressive dumper in the average and high markets (\$1,437 vs \$1,311 and \$1,867 vs \$1,829). v6.3's gain is the circuit-breaker fix in the low market against the bounded rival (\$188 → \$927 per season); average and high are unchanged within noise. Most of v6.2's gain comes from the old v1.0 rival (+13% average, +7.5% high); over 17 scenarios including 5 replayed tournament rivals and 10 seeds, v6.2 earns +1.95% ± 0.23% more than v6.1 (ALGORITHM_CHANGES §18.4). This is a simulator with hand-chosen parameters, so treat it as a regression test rather than a forecast of tournament results.
+95% confidence intervals per cell are printed by the script, typically ±\$15–\$75 per rival. v6.4 gains +13.7% (low), +8.9% (average) and +1.7% (high) over v6.3 and is equal or better against every rival except the copycat in the low market (\$850 → \$733 ± 93): that simulated copycat never prices below \$25, so v6.3 could undercut it, while the real copier in `data/v6` followed us down to \$18 (§4.7). Against the aggressive dumper the naive strategy still does better in the average market (\$1,437 vs \$1,401 for v6.4; v6.3: \$1,311); in the high market v6.4 now beats it (\$1,940 vs \$1,867). v6.3's gain is the circuit-breaker fix in the low market against the bounded rival (\$188 → \$927 per season); average and high are unchanged within noise. Most of v6.2's gain comes from the old v1.0 rival (+13% average, +7.5% high); over 17 scenarios including 5 replayed tournament rivals and 10 seeds, v6.2 earns +1.95% ± 0.23% more than v6.1 (ALGORITHM_CHANGES §18.4). This is a simulator with hand-chosen parameters, so treat it as a regression test rather than a forecast of tournament results.
 
 ### 4.6 Ablation study: what each part is worth
 
-`python analytics/ablation_study.py` switches each part of `duopoly.py` off in turn (17 scenarios, 10 seeds × 30 seasons) and counts how often each guard changes the price:
+Measured on v6.3; v6.4's market-sized branch is evaluated in §4.7. `python analytics/ablation_study.py` switches each part of `duopoly.py` off in turn (17 scenarios, 10 seeds × 30 seasons) and counts how often each guard changes the price:
 
 ![Ablation study](imgs/ablation_study.png)
 
@@ -481,6 +486,32 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 * **Small but positive:** late clearance, late cap under a high rival, behind-pace cap, regime classification, circuit breaker (0.2–0.6% each). Removed *together* they cost much more than the sum, so they stay.
 * **Trade-offs:** the price band around the rival, the \$18 floor, the low-demand test and the dumper holdout. Without them the simulator earns 1–3% more overall, but loses up to 16–23% in the low-demand market. Low-demand rounds were our worst real tournaments, so they stay.
 * The study found one bug: the circuit breaker undercut rivals priced above what customers would pay (\$201 per season in one scenario). v6.3 fixes it (+2.09% total vs v6.2, 10 / 10 seeds). Details: ALGORITHM_CHANGES §19.
+
+### 4.7 Tournament `data/v6` and the v6.4 market-sizing release
+
+`data/v6` holds three tournaments run with v6.3 unchanged (rank 12, 19 and 49; 34 matches × 100 seasons). Full post-mortem and method: ALGORITHM_CHANGES §20.
+
+![data/v6 post-mortem](imgs/v6_tournament_postmortem.png)
+
+*(Generated by `analytics/generate_v6_plots.py`.)*
+
+* **The markets were small.** No rival sold out in any season, not even at \$0.10. We sold 15–21 seats per season on average (79 in `data/v5`) and sat at the \$18 floor on 53–77% of days.
+* **Ranks are not comparable (Panel A).** Each tournament has its own rivals and markets; revenue rises with the rival's price. The rank-49 tournament had no rival above \$35. We judge versions only by our own revenue in the same situations.
+* **Same demand model every season (Panel B).** With steady prices, the variance of seats per season equals the mean: Poisson noise around a fixed average. Averaging past seasons therefore estimates what this market buys (about 10% error after 5 seasons in a 13-seat market, 5% in a 44-seat market).
+* **Why v6.3 lost money:** it chased an 80-seat plan these markets could not deliver, so the gap pushed every guard to its lowest price (\$26 against rivals at \$80–\$100); and its season-end clearance started a price war with a rival that copies our price (Panel C).
+* **A demand model fitted per match reproduces the data (Panel D):** about 47 buyers per season, with a willingness-to-pay midpoint of about \$45–\$55 or \$15–\$20.
+
+v6.4 adds market sizing and copier handling (components 8 and 9 above). `analytics/v6_testbed.py` replays the 34 matches with that fitted demand and the logged rival prices (v6.3 replayed: \$1,589,865 vs \$1,587,858 actually earned):
+
+![v6.4 test bed results](imgs/v64_testbed_results.png)
+
+| Test bed (`data/v6`, 3 seeds) | Total revenue | vs v6.3 | Share of best possible |
+| :--- | :---: | :---: | :---: |
+| v6.3 | \$1,583,201 | – | 66.9% |
+| **v6.4** | **\$1,969,955** | **+24.4%** | **83.2%** |
+| v6.4 with a \$5 floor (extrapolated, not adopted) | \$2,145,032 | +35.5% | 90.6% |
+
+No match loses more than 1%. On the old simulator (a different demand model) v6.4 gains +13.7% (low), +8.9% (average) and +1.7% (high), §4.5. The test bed uses the same model family that v6.4 fits and its rivals do not react, so treat +24% as an upper estimate of the tournament effect.
 
 ---
 
@@ -492,15 +523,15 @@ Before submitting [`duopoly.py`](duopoly.py) to the DPC platform:
 
 - [x] File named strictly `duopoly.py`.
 - [x] Pricing function `p(...)` adheres to the exact signature and argument types.
-- [x] Output price is clipped to \$25.00–\$100.00 (floor \$18.00 once low demand is detected).
+- [x] Output price is clipped to \$25.00–\$100.00 (floor \$18.00 once low demand is detected or in market-sized mode).
 - [x] Safely indexes row `0` (own price) and row `1` (rival price) of `prices_historical_in_current_season`.
-- [x] Persists cross-season state in `information_dump`: rival price history, EMA and per-season medians, sales per season, price-demand statistics, regression training data and coefficients, and the learned target-curve bend.
+- [x] Persists cross-season state in `information_dump`: rival price history, EMA and per-season medians, sales per season, price-demand statistics, regression training data and coefficients, the learned target-curve bend, the choice-model parameters, the copier checks and the held price.
 - [x] Handles `None` inputs on period 1 (`prices_historical`, `demand_historical`).
 - [x] Handles period 101 gracefully to log end-of-season summaries without throwing exceptions.
-- [x] Average execution latency well below the 0.2-second limit (~0.05 ms mean, ~12 ms worst case incl. the once-per-season regression refit).
+- [x] Average execution latency well below the 0.2-second limit (~0.5 ms mean, ~16 ms worst case incl. the regression refit and the choice-model fit).
 - [x] Memory usage within 512 MB.
 - [x] No unauthorized file system writes or terminal output logging.
-- [x] `python -m pytest` passes (27 tests).
+- [x] `python -m pytest` passes (34 tests).
 
 ### 5.2 Uploading to the DPC Platform
 
