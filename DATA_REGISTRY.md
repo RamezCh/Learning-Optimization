@@ -18,9 +18,9 @@ OLS of seats sold per day on our price, rival price − our price and τ, on day
 
 | Regime | Matches | Seasons | Days | $\beta_0$ | $B$ | $C$ | $\beta_t$ | Mean seats/day | $R^2$ | Holdout $R^2$ |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| low | 59 | 5,352 | 566,720 | 0.1329 | -0.0041 | 0.0037 | 0.176 | 0.206 | 0.05 | 0.047 |
-| average | 35 | 1,397 | 136,130 | 0.5927 | -0.0064 | 0.002 | 0.5405 | 0.69 | 0.037 | 0.04 |
-| high | 10 | 551 | 54,720 | 1.0198 | -0.0452 | 0.0297 | 0.7029 | 0.785 | 0.129 | 0.128 |
+| low | 201 | 13,620 | 1,365,518 | 0.137 | -0.0035 | 0.0033 | 0.1651 | 0.214 | 0.028 | 0.027 |
+| average | 217 | 12,616 | 1,185,081 | 0.4987 | -0.0151 | 0.0144 | 0.4499 | 0.698 | 0.096 | 0.095 |
+| high | 98 | 3,664 | 355,854 | 0.5376 | -0.0167 | 0.0092 | 1.0032 | 0.772 | 0.142 | 0.144 |
 
 **Models `duopoly.py` uses now** (`REGIME_PRESETS_MLR`, older fits by dataset folder: low = mlr, v5.1, poisson_logit; average = v3, v4; high = v1):
 
@@ -30,7 +30,12 @@ OLS of seats sold per day on our price, rival price − our price and τ, on day
 | average | 0.9696 | -0.0172 | 0.0065 | 0.3998 |
 | high | 2.2329 | -0.0386 | 0.0 | 0.8327 |
 
-The refitted models were tested in `duopoly.py` (2026-10-31) and **not adopted**: revenue changed by −0.8% on the `data/v6` test bed and by +0.8% / −0.4% / −0.2% (average / high / low) on the old simulator, within noise. Blending the pooled model into each match's own fit (weight 500 or 2,000 days) did not help either. These models only set prices until a match has 80 days of its own data (most of season 1); after that each match's own fit describes that match better than pooled data (pooled fits explain 4–13% of daily sales). See ALGORITHM_CHANGES §20.8.
+Refitted models were tested in `duopoly.py` twice and **not adopted**:
+
+* 2026-10-31 (data up to `data/v6`): −0.8% on the `data/v6` test bed; +0.8% / −0.4% / −0.2% (average / high / low) on the old simulator. See ALGORITHM_CHANGES §20.8.
+* 2026-11-07 (with `data/v6.4` days 1–3, ~2.9M days): −0.8% on the `data/v6.4` test bed (76 matches; 6 better, 4 worse, range −16% to +35%). See ALGORITHM_CHANGES §21.4.
+
+These models only set prices until a match has 80 days of its own data (most of season 1); after that each match's own fit describes that match better than pooled data (pooled fits explain 3–14% of daily sales).
 
 ## Datasets
 
@@ -46,6 +51,15 @@ The refitted models were tested in `duopoly.py` (2026-10-31) and **not adopted**
 | `v6` | `AirborneTody_rank_12.csv` | v6.3 | 12 | 1108 / 92 / 0 | 21.1 |
 | `v6` | `DeftDalmatian_rank_19.csv` | v6.3 | 12 | 1177 / 23 / 0 | 21.2 |
 | `v6` | `ProficientCivet_rank_49.csv` | v6.3 | 10 | 994 / 6 / 0 | 15.4 |
+| `v6.4/day 1` | `Deft_Rank_17.csv` | v6.4 | 18 | 420 / 880 / 500 | 62.9 |
+| `v6.4/day 1` | `Proficient_rank_12.csv` | v6.4 | 18 | 487 / 1047 / 266 | 59.2 |
+| `v6.4/day 1` | `Tody_Rank_33.csv` | v6.4 | 18 | 711 / 944 / 145 | 50.5 |
+| `v6.4/day 2` | `v6.4_rank_1.csv` | v6.4 | 29 | 1183 / 1380 / 337 | 51.2 |
+| `v6.4/day 2` | `v6.4_rank_10.csv` | v6.4 | 28 | 1528 / 1011 / 261 | 45.2 |
+| `v6.4/day 2` | `v6.4_rank_4.csv` | v6.4 | 30 | 1448 / 1283 / 269 | 47.1 |
+| `v6.4/day 3` | `rank_3_ProficientCivet.csv` | v6.4 | 28 | 654 / 1563 / 583 | 60.5 |
+| `v6.4/day 3` | `rank_4_AirborneTody.csv` | v6.4 | 28 | 802 / 1627 / 371 | 60.7 |
+| `v6.4/day 3` | `rank_5_DeftDalmatian.csv` | v6.4 | 29 | 1035 / 1484 / 381 | 56.2 |
 
 ## Matches
 
@@ -124,3 +138,229 @@ The refitted models were tested in `duopoly.py` (2026-10-31) and **not adopted**
 | `v6` | `UJ4kid` | LoutishWorm | **low** | 97 / 3 / 0 | 31.2 | \$808 | \$34.8 | 0% |
 | `v6` | `syPSWX` | GiftedChachalaca | **low** | 100 / 0 / 0 | 20.8 | \$451 | \$20.0 | 0% |
 | `v6` | `yThfBp` | KickassMoth | **low** | 100 / 0 / 0 | 17.2 | \$312 | \$13.2 | 0% |
+| `v6.4/day 1` | `36a2Kq` | FunkyGoshawk | **average** | 0 / 100 / 0 | 75.1 | \$2,979 | \$40.4 | 58% |
+| `v6.4/day 1` | `36auSW` | SuperGoshawk | **low** | 100 / 0 / 0 | 26.3 | \$473 | \$17.8 | 0% |
+| `v6.4/day 1` | `3HbSfY` | SageSloth | **average** | 0 / 100 / 0 | 76.8 | \$3,202 | \$42.5 | 40% |
+| `v6.4/day 1` | `3ieX4R` | SageSloth | **high** | 11 / 29 / 60 | 70.8 | \$2,045 | \$30.0 | 45% |
+| `v6.4/day 1` | `3yq9N3` | ManipulativeJaybird | **low** | 100 / 0 / 0 | 13.5 | \$243 | \$45.0 | 0% |
+| `v6.4/day 1` | `49oBRy` | InterestingHamster | **average** | 0 / 100 / 0 | 73.4 | \$3,513 | \$48.5 | 18% |
+| `v6.4/day 1` | `4AnbgY` | BlueFalcon | **high** | 4 / 22 / 74 | 74.9 | \$2,328 | \$31.0 | 32% |
+| `v6.4/day 1` | `4D6pLS` | InterestingHamster | **high** | 8 / 21 / 71 | 73.0 | \$2,448 | \$37.2 | 7% |
+| `v6.4/day 1` | `4MEoQS` | SeriousLori | **average** | 30 / 35 / 35 | 63.1 | \$1,611 | \$29.5 | 32% |
+| `v6.4/day 1` | `4X3G3U` | UnbiasedCurassow | **high** | 3 / 4 / 93 | 78.1 | \$1,945 | \$24.5 | 0% |
+| `v6.4/day 1` | `6GQ2sY` | SuperGoshawk | **low** | 100 / 0 / 0 | 0.0 | \$1 | \$13.0 | 1% |
+| `v6.4/day 1` | `7oo5AN` | ManipulativeJaybird | **average** | 0 / 100 / 0 | 77.5 | \$3,410 | \$45.0 | 56% |
+| `v6.4/day 1` | `AvWjie` | SeriousLori | **low** | 43 / 25 / 32 | 51.8 | \$957 | \$21.0 | 31% |
+| `v6.4/day 1` | `JjRTzg` | FunkyGoshawk | **high** | 6 / 24 / 70 | 74.5 | \$2,497 | \$33.7 | 57% |
+| `v6.4/day 1` | `QbEhfv` | UnbiasedCurassow | **average** | 0 / 100 / 0 | 79.2 | \$3,666 | \$52.2 | 0% |
+| `v6.4/day 1` | `jkmiSn` | WonderfulOxpecker | **average** | 0 / 92 / 8 | 77.1 | \$2,776 | \$47.8 | 0% |
+| `v6.4/day 1` | `rKxM4X` | BlueFalcon | **average** | 0 / 100 / 0 | 77.4 | \$2,572 | \$32.0 | 32% |
+| `v6.4/day 1` | `ruFLhm` | WonderfulOxpecker | **high** | 15 / 28 / 57 | 69.7 | \$1,736 | \$30.5 | 0% |
+| `v6.4/day 1` | `32SC3h` | IncredibleDogfish | **average** | 0 / 100 / 0 | 79.3 | \$3,486 | \$47.1 | 48% |
+| `v6.4/day 1` | `34cSm2` | IncredibleDogfish | **high** | 4 / 43 / 53 | 71.5 | \$1,889 | \$27.1 | 41% |
+| `v6.4/day 1` | `3TvaKy` | RussetBat | **average** | 0 / 100 / 0 | 73.8 | \$3,336 | \$41.5 | 90% |
+| `v6.4/day 1` | `3ULYdB` | DaringVole | **low** | 100 / 0 / 0 | 0.0 | \$0 | \$54.7 | 0% |
+| `v6.4/day 1` | `3WgD3U` | TopazCat | **average** | 0 / 100 / 0 | 78.4 | \$3,590 | \$56.3 | 8% |
+| `v6.4/day 1` | `3YWybe` | RussetBat | **average** | 0 / 100 / 0 | 75.2 | \$3,066 | \$40.0 | 74% |
+| `v6.4/day 1` | `3bLeAq` | IncredibleDogfish | **average** | 0 / 100 / 0 | 76.1 | \$3,868 | \$49.6 | 60% |
+| `v6.4/day 1` | `3em43B` | RationalLion | **low** | 100 / 0 / 0 | 0.3 | \$5 | \$109.9 | 0% |
+| `v6.4/day 1` | `3fGfcd` | NoisyMammoth | **average** | 0 / 100 / 0 | 74.4 | \$3,621 | \$37.1 | 82% |
+| `v6.4/day 1` | `3prEEs` | DaringVole | **low** | 100 / 0 / 0 | 0.0 | \$0 | \$54.8 | 0% |
+| `v6.4/day 1` | `3sr9Ku` | TopazCat | **average** | 0 / 100 / 0 | 77.6 | \$3,648 | \$55.8 | 7% |
+| `v6.4/day 1` | `3tEEYF` | HelpfulPython | **high** | 32 / 31 / 37 | 63.8 | \$1,802 | \$29.2 | 70% |
+| `v6.4/day 1` | `3uRQuE` | NoisyMammoth | **high** | 43 / 11 / 46 | 57.6 | \$1,476 | \$25.2 | 67% |
+| `v6.4/day 1` | `3wQbBv` | IncredibleDogfish | **high** | 0 / 1 / 99 | 78.3 | \$2,824 | \$36.9 | 44% |
+| `v6.4/day 1` | `3xGehV` | RussetBat | **low** | 53 / 35 / 12 | 55.8 | \$1,169 | \$20.0 | 79% |
+| `v6.4/day 1` | `4BhskJ` | RationalLion | **average** | 0 / 99 / 1 | 75.3 | \$3,182 | \$41.2 | 41% |
+| `v6.4/day 1` | `BYYDnb` | HelpfulPython | **low** | 55 / 27 / 18 | 55.9 | \$1,070 | \$17.6 | 52% |
+| `v6.4/day 1` | `MU7HcS` | RussetBat | **average** | 0 / 100 / 0 | 72.8 | \$3,262 | \$42.0 | 87% |
+| `v6.4/day 1` | `34Z9uF` | ZealousMosquito | **average** | 10 / 53 / 37 | 69.1 | \$1,653 | \$55.1 | 0% |
+| `v6.4/day 1` | `3J5SfR` | ManipulativeJaybird | **average** | 0 / 100 / 0 | 76.0 | \$3,189 | \$44.2 | 38% |
+| `v6.4/day 1` | `3Wunib` | NiceFinch | **average** | 0 / 100 / 0 | 76.5 | \$2,900 | \$55.1 | 0% |
+| `v6.4/day 1` | `3a86B6` | SageSloth | **average** | 0 / 100 / 0 | 76.9 | \$3,480 | \$45.9 | 46% |
+| `v6.4/day 1` | `3imwmV` | VersatileOrca | **average** | 0 / 100 / 0 | 77.8 | \$3,531 | \$46.6 | 44% |
+| `v6.4/day 1` | `3pcNsX` | SageSloth | **low** | 100 / 0 / 0 | 15.9 | \$287 | \$21.2 | 0% |
+| `v6.4/day 1` | `3sJbEF` | ImpossibleLadybug | **low** | 100 / 0 / 0 | 0.0 | \$1 | \$17.5 | 0% |
+| `v6.4/day 1` | `3vZC3U` | ManipulativeJaybird | **low** | 100 / 0 / 0 | 0.0 | \$0 | \$45.0 | 0% |
+| `v6.4/day 1` | `446Pbr` | ImpossibleLadybug | **average** | 0 / 100 / 0 | 80.0 | \$3,675 | \$100.0 | 1% |
+| `v6.4/day 1` | `4HDw3Y` | ZealousMosquito | **average** | 0 / 100 / 0 | 79.5 | \$3,431 | \$54.8 | 0% |
+| `v6.4/day 1` | `4JpqHB` | VersedJackdaw | **low** | 100 / 0 / 0 | 0.3 | \$5 | \$12.3 | 24% |
+| `v6.4/day 1` | `4Ln4Us` | NiceFinch | **low** | 96 / 4 / 0 | 48.2 | \$868 | \$55.0 | 0% |
+| `v6.4/day 1` | `4Muh8V` | VersatileOrca | **average** | 0 / 77 / 23 | 79.5 | \$2,864 | \$35.7 | 37% |
+| `v6.4/day 1` | `DaSfHd` | IndependentPorpoise | **average** | 6 / 49 / 45 | 70.0 | \$2,106 | \$49.7 | 0% |
+| `v6.4/day 1` | `JQhC3f` | EnergeticMole | **low** | 93 / 7 / 0 | 16.7 | \$303 | \$10.0 | 99% |
+| `v6.4/day 1` | `LvrJkv` | VersedJackdaw | **average** | 0 / 100 / 0 | 72.7 | \$3,395 | \$21.5 | 100% |
+| `v6.4/day 1` | `nRVY5h` | EnergeticMole | **low** | 100 / 0 / 0 | 0.1 | \$2 | \$12.7 | 47% |
+| `v6.4/day 1` | `vMsPXH` | IndependentPorpoise | **average** | 6 / 54 / 40 | 69.6 | \$1,928 | \$53.0 | 0% |
+| `v6.4/day 2` | `32W96N` | IndigoJackal | **average** | 15 / 49 / 36 | 67.6 | \$1,433 | \$24.0 | 17% |
+| `v6.4/day 2` | `34WTMz` | IndigoJackal | **average** | 0 / 99 / 1 | 78.0 | \$3,560 | \$30.0 | 99% |
+| `v6.4/day 2` | `38nW6C` | SeriousLori | **low** | 97 / 3 / 0 | 26.0 | \$634 | \$23.2 | 0% |
+| `v6.4/day 2` | `3CjC4a` | ActiveTrout | **average** | 44 / 49 / 7 | 60.1 | \$1,086 | \$18.0 | 0% |
+| `v6.4/day 2` | `3DwNBo` | HumongousLocust | **low** | 100 / 0 / 0 | 21.6 | \$775 | \$38.0 | 0% |
+| `v6.4/day 2` | `3Edtth` | WittyRottweiler | **average** | 11 / 89 / 0 | 54.8 | \$1,703 | \$27.2 | 17% |
+| `v6.4/day 2` | `3HWowZ` | IndependentCoati | **low** | 100 / 0 / 0 | 13.0 | \$245 | \$15.0 | 0% |
+| `v6.4/day 2` | `3HbfjN` | RadiantMussel | **low** | 96 / 4 / 0 | 30.2 | \$546 | \$15.3 | 0% |
+| `v6.4/day 2` | `3Jeum6` | SaffronDolphin | **average** | 0 / 83 / 17 | 79.6 | \$3,667 | \$35.0 | 100% |
+| `v6.4/day 2` | `3LimTn` | ActiveTrout | **average** | 36 / 64 / 0 | 44.4 | \$845 | \$18.0 | 0% |
+| `v6.4/day 2` | `3QmFCo` | StirringWombat | **average** | 0 / 100 / 0 | 80.0 | \$3,678 | \$50.0 | 100% |
+| `v6.4/day 2` | `3Rx8to` | IndigoJackal | **average** | 26 / 74 / 0 | 45.7 | \$1,365 | \$38.0 | 0% |
+| `v6.4/day 2` | `3VTL7f` | IndependentCoati | **high** | 1 / 5 / 94 | 78.4 | \$2,138 | \$30.8 | 0% |
+| `v6.4/day 2` | `3ebUms` | RationalLion | **low** | 99 / 1 / 0 | 18.4 | \$417 | \$14.5 | 0% |
+| `v6.4/day 2` | `3iXR6L` | RationalLion | **low** | 60 / 25 / 15 | 48.9 | \$917 | \$20.0 | 41% |
+| `v6.4/day 2` | `3vbZVf` | IndigoJackal | **low** | 93 / 7 / 0 | 31.2 | \$579 | \$17.0 | 0% |
+| `v6.4/day 2` | `4DU7wz` | SeriousLori | **average** | 6 / 94 / 0 | 62.6 | \$3,275 | \$56.0 | 46% |
+| `v6.4/day 2` | `4HfKWK` | HumongousLocust | **average** | 1 / 60 / 39 | 68.2 | \$1,227 | \$33.0 | 0% |
+| `v6.4/day 2` | `4Hoztc` | VersatileOrca | **average** | 0 / 51 / 49 | 79.3 | \$3,119 | \$39.4 | 83% |
+| `v6.4/day 2` | `Lq4TsU` | IndigoJackal | **low** | 90 / 10 / 0 | 33.2 | \$614 | \$19.0 | 0% |
+| `v6.4/day 2` | `PdFH2C` | SaffronDolphin | **average** | 20 / 69 / 11 | 61.7 | \$2,220 | \$35.0 | 96% |
+| `v6.4/day 2` | `SoMkcf` | StirringWombat | **average** | 7 / 90 / 3 | 62.0 | \$1,879 | \$50.0 | 0% |
+| `v6.4/day 2` | `Y6rD2Z` | HumongousLocust | **average** | 0 / 73 / 27 | 77.5 | \$3,014 | \$43.0 | 0% |
+| `v6.4/day 2` | `aCK6V6` | RadiantMussel | **low** | 72 / 28 / 0 | 36.8 | \$670 | \$17.3 | 0% |
+| `v6.4/day 2` | `gGBvFJ` | Winner_2023 | **low** | 100 / 0 / 0 | 0.1 | \$2 | \$0.5 | 0% |
+| `v6.4/day 2` | `rBFF4W` | Winner_2023 | **average** | 0 / 99 / 1 | 70.8 | \$2,302 | \$31.4 | 39% |
+| `v6.4/day 2` | `tfdngi` | WittyRottweiler | **low** | 100 / 0 / 0 | 6.0 | \$155 | \$2.0 | 0% |
+| `v6.4/day 2` | `ttA6gr` | HumongousLocust | **average** | 9 / 54 / 37 | 68.8 | \$1,246 | \$33.0 | 0% |
+| `v6.4/day 2` | `v4KNTx` | IndigoJackal | **average** | 0 / 100 / 0 | 79.7 | \$3,693 | \$33.0 | 99% |
+| `v6.4/day 2` | `32YEkB` | CautiousWaxbill | **low** | 100 / 0 / 0 | 32.0 | \$583 | \$9.0 | 0% |
+| `v6.4/day 2` | `364DXi` | ActiveTrout | **low** | 100 / 0 / 0 | 16.1 | \$291 | \$18.0 | 0% |
+| `v6.4/day 2` | `3AeiAs` | EagerToad | **high** | 3 / 16 / 81 | 76.2 | \$2,774 | \$37.2 | 53% |
+| `v6.4/day 2` | `3WcHJz` | CautiousWaxbill | **low** | 57 / 42 / 1 | 42.8 | \$921 | \$16.2 | 46% |
+| `v6.4/day 2` | `3acLEC` | Winner_2023 | **average** | 27 / 42 / 31 | 66.0 | \$1,200 | \$19.6 | 49% |
+| `v6.4/day 2` | `3bbBwq` | FierceDuck | **low** | 100 / 0 / 0 | 17.5 | \$318 | \$13.5 | 0% |
+| `v6.4/day 2` | `3djGVn` | FierceDuck | **low** | 97 / 3 / 0 | 20.7 | \$374 | \$15.8 | 36% |
+| `v6.4/day 2` | `3gWrMu` | ActiveTrout | **average** | 0 / 52 / 48 | 78.5 | \$3,129 | \$42.4 | 72% |
+| `v6.4/day 2` | `3je5S2` | ConvivialCrane | **average** | 0 / 100 / 0 | 79.8 | \$3,407 | \$46.5 | 1% |
+| `v6.4/day 2` | `3joq4g` | BenevolentSwan | **average** | 28 / 44 / 28 | 64.8 | \$1,402 | \$23.5 | 23% |
+| `v6.4/day 2` | `3pYsvG` | FierceDuck | **low** | 99 / 1 / 0 | 36.1 | \$651 | \$15.6 | 2% |
+| `v6.4/day 2` | `3qrqma` | FierceDuck | **average** | 0 / 99 / 1 | 80.0 | \$3,688 | \$48.2 | 42% |
+| `v6.4/day 2` | `3yvr6U` | IndigoJackal | **low** | 100 / 0 / 0 | 8.7 | \$165 | \$11.0 | 0% |
+| `v6.4/day 2` | `4AVSRE` | ChirpyPython | **low** | 100 / 0 / 0 | 10.1 | \$184 | \$14.0 | 0% |
+| `v6.4/day 2` | `4JkVFp` | Winner_2023 | **low** | 100 / 0 / 0 | 2.4 | \$44 | \$0.5 | 0% |
+| `v6.4/day 2` | `6X4KnS` | IndigoJackal | **average** | 7 / 93 / 0 | 60.1 | \$2,086 | \$26.0 | 90% |
+| `v6.4/day 2` | `HA5s26` | DaringVole | **average** | 0 / 100 / 0 | 78.9 | \$3,599 | \$55.0 | 0% |
+| `v6.4/day 2` | `MqyCj7` | BenevolentSwan | **low** | 94 / 6 / 0 | 36.6 | \$881 | \$23.4 | 0% |
+| `v6.4/day 2` | `N65C9C` | VersedJackdaw | **low** | 100 / 0 / 0 | 20.3 | \$518 | \$28.5 | 0% |
+| `v6.4/day 2` | `S5FE8U` | EagerToad | **average** | 0 / 100 / 0 | 79.7 | \$3,424 | \$47.3 | 61% |
+| `v6.4/day 2` | `SCJcwX` | VersedJackdaw | **average** | 1 / 99 / 0 | 71.7 | \$2,382 | \$32.7 | 26% |
+| `v6.4/day 2` | `VcqE5d` | CrystalTamarin | **low** | 100 / 0 / 0 | 10.9 | \$197 | \$9.0 | 0% |
+| `v6.4/day 2` | `Yf849m` | CrystalTamarin | **low** | 100 / 0 / 0 | 19.1 | \$345 | \$9.0 | 1% |
+| `v6.4/day 2` | `f9GNzJ` | ChirpyPython | **high** | 28 / 9 / 63 | 63.5 | \$1,792 | \$29.3 | 50% |
+| `v6.4/day 2` | `hWWmae` | VersatileOrca | **average** | 3 / 89 / 8 | 57.9 | \$1,246 | \$28.0 | 0% |
+| `v6.4/day 2` | `kRLAuM` | DaringVole | **low** | 89 / 11 / 0 | 32.8 | \$1,228 | \$54.8 | 0% |
+| `v6.4/day 2` | `vUeHWC` | VersatileOrca | **average** | 0 / 100 / 0 | 80.0 | \$3,620 | \$59.7 | 16% |
+| `v6.4/day 2` | `wZWprX` | ConvivialCrane | **low** | 95 / 5 / 0 | 23.8 | \$543 | \$15.3 | 0% |
+| `v6.4/day 2` | `3HKhRg` | IndigoJackal | **low** | 100 / 0 / 0 | 6.9 | \$128 | \$13.0 | 0% |
+| `v6.4/day 2` | `3JdAq3` | PinkDuck | **low** | 70 / 30 / 0 | 37.7 | \$1,090 | \$18.1 | 0% |
+| `v6.4/day 2` | `3MdM7B` | SuperGoshawk | **low** | 100 / 0 / 0 | 3.7 | \$67 | \$2.8 | 0% |
+| `v6.4/day 2` | `3UkmYF` | EagerToad | **low** | 100 / 0 / 0 | 7.8 | \$229 | \$14.8 | 0% |
+| `v6.4/day 2` | `3Wn7Br` | StirringWombat | **average** | 0 / 100 / 0 | 73.4 | \$3,017 | \$50.2 | 2% |
+| `v6.4/day 2` | `3YFZ5f` | FierceDuck | **average** | 11 / 48 / 41 | 68.9 | \$1,496 | \$24.5 | 0% |
+| `v6.4/day 2` | `3ZE4iz` | SaffronDolphin | **low** | 100 / 0 / 0 | 30.0 | \$730 | \$25.0 | 0% |
+| `v6.4/day 2` | `3mkWMD` | SageSloth | **average** | 0 / 100 / 0 | 80.0 | \$3,525 | \$45.3 | 43% |
+| `v6.4/day 2` | `3nAUPr` | WittyRottweiler | **low** | 100 / 0 / 0 | 13.1 | \$238 | \$5.0 | 0% |
+| `v6.4/day 2` | `3oeuKQ` | SageSloth | **average** | 3 / 94 / 3 | 52.6 | \$974 | \$21.2 | 0% |
+| `v6.4/day 2` | `3tzCVv` | WittyRottweiler | **low** | 100 / 0 / 0 | 15.8 | \$299 | \$6.5 | 1% |
+| `v6.4/day 2` | `3udnJu` | PinkDuck | **average** | 0 / 81 / 19 | 79.9 | \$3,772 | \$54.2 | 2% |
+| `v6.4/day 2` | `3vW9QJ` | BenevolentSwan | **low** | 91 / 9 / 0 | 32.9 | \$665 | \$20.0 | 0% |
+| `v6.4/day 2` | `3wtmNw` | IndigoJackal | **low** | 63 / 21 / 16 | 50.2 | \$1,394 | \$12.0 | 98% |
+| `v6.4/day 2` | `3yMrM7` | SageSloth | **average** | 0 / 97 / 3 | 79.7 | \$3,175 | \$37.8 | 97% |
+| `v6.4/day 2` | `43PxDY` | SuperGoshawk | **low** | 44 / 35 / 21 | 60.2 | \$1,132 | \$20.2 | 7% |
+| `v6.4/day 2` | `4C4gMk` | PinkDuck | **average** | 0 / 100 / 0 | 79.5 | \$2,854 | \$41.2 | 2% |
+| `v6.4/day 2` | `4DKJo8` | EagerToad | **average** | 0 / 100 / 0 | 66.2 | \$3,028 | \$63.5 | 0% |
+| `v6.4/day 2` | `4F6w5v` | SuperGoshawk | **low** | 100 / 0 / 0 | 8.5 | \$154 | \$3.2 | 0% |
+| `v6.4/day 2` | `4FXeuz` | CrystalTamarin | **average** | 4 / 94 / 2 | 62.6 | \$1,812 | \$28.0 | 63% |
+| `v6.4/day 2` | `4Lz6pd` | EagerToad | **high** | 0 / 47 / 53 | 79.3 | \$3,259 | \$41.5 | 64% |
+| `v6.4/day 2` | `GpYawD` | BenevolentSwan | **low** | 60 / 40 / 0 | 40.1 | \$730 | \$17.8 | 0% |
+| `v6.4/day 2` | `KdpWPo` | EagerToad | **low** | 85 / 13 / 2 | 43.9 | \$1,138 | \$26.0 | 41% |
+| `v6.4/day 2` | `Yi4qeu` | CrystalTamarin | **low** | 100 / 0 / 0 | 11.6 | \$210 | \$9.0 | 0% |
+| `v6.4/day 2` | `aKYQ29` | PinkDuck | **average** | 0 / 76 / 24 | 80.0 | \$3,754 | \$52.0 | 0% |
+| `v6.4/day 2` | `dsJgtp` | SaffronDolphin | **average** | 23 / 74 / 3 | 54.6 | \$2,161 | \$25.0 | 100% |
+| `v6.4/day 2` | `pVUQ9p` | FierceDuck | **low** | 83 / 17 / 0 | 35.2 | \$654 | \$18.2 | 0% |
+| `v6.4/day 2` | `qMZX4z` | StirringWombat | **low** | 98 / 2 / 0 | 30.1 | \$1,093 | \$49.8 | 0% |
+| `v6.4/day 2` | `tZtZJJ` | SuperGoshawk | **high** | 3 / 16 / 81 | 76.0 | \$2,067 | \$29.2 | 12% |
+| `v6.4/day 2` | `wa6que` | SageSloth | **average** | 10 / 89 / 1 | 51.2 | \$942 | \$21.2 | 0% |
+| `v6.4/day 3` | `32f8GN` | PumpkinStallion | **high** | 0 / 2 / 98 | 79.5 | \$2,510 | \$38.1 | 0% |
+| `v6.4/day 3` | `3AbMbH` | WittyRottweiler | **low** | 94 / 6 / 0 | 31.0 | \$660 | \$27.0 | 99% |
+| `v6.4/day 3` | `3TCibe` | WittyRottweiler | **average** | 0 / 100 / 0 | 79.8 | \$4,012 | \$45.0 | 100% |
+| `v6.4/day 3` | `3Tqgmr` | BenevolentSwan | **high** | 1 / 5 / 94 | 77.8 | \$2,079 | \$27.6 | 42% |
+| `v6.4/day 3` | `3WBCaE` | KickassMoth | **low** | 100 / 0 / 0 | 10.2 | \$184 | \$13.9 | 0% |
+| `v6.4/day 3` | `3bqhAb` | PumpkinStallion | **average** | 0 / 100 / 0 | 80.0 | \$3,750 | \$80.2 | 0% |
+| `v6.4/day 3` | `3hqaEX` | HumongousLocust | **average** | 6 / 93 / 1 | 51.0 | \$1,385 | \$37.0 | 0% |
+| `v6.4/day 3` | `3iFxnk` | SaffronDolphin | **low** | 53 / 44 / 3 | 52.8 | \$1,069 | \$20.0 | 14% |
+| `v6.4/day 3` | `3mN6RM` | PumpkinStallion | **average** | 1 / 98 / 1 | 78.7 | \$3,801 | \$65.0 | 0% |
+| `v6.4/day 3` | `3pLD9b` | DeftDalmatian | **high** | 8 / 45 / 47 | 69.2 | \$1,711 | \$26.7 | 6% |
+| `v6.4/day 3` | `3uiRr4` | RationalLion | **high** | 0 / 0 / 100 | 80.0 | \$3,674 | \$64.6 | 7% |
+| `v6.4/day 3` | `45drD5` | RadiantMussel | **low** | 100 / 0 / 0 | 0.1 | \$1 | \$12.1 | 31% |
+| `v6.4/day 3` | `485hvN` | RationalLion | **average** | 17 / 81 / 2 | 51.3 | \$1,411 | \$16.8 | 53% |
+| `v6.4/day 3` | `49VM6g` | CautiousWaxbill | **low** | 100 / 0 / 0 | 1.3 | \$23 | \$9.0 | 7% |
+| `v6.4/day 3` | `4Cn5h9` | VersatileOrca | **high** | 0 / 1 / 99 | 78.7 | \$2,079 | \$28.0 | 0% |
+| `v6.4/day 3` | `4EoUum` | BenevolentSwan | **average** | 7 / 93 / 0 | 58.3 | \$2,656 | \$46.8 | 0% |
+| `v6.4/day 3` | `4UD6dQ` | StirringWombat | **average** | 0 / 100 / 0 | 62.7 | \$2,124 | \$49.9 | 0% |
+| `v6.4/day 3` | `AUsmtN` | DeftDalmatian | **low** | 56 / 44 / 0 | 40.8 | \$738 | \$18.0 | 0% |
+| `v6.4/day 3` | `HA64sJ` | VersatileOrca | **average** | 0 / 100 / 0 | 80.0 | \$4,046 | \$56.0 | 53% |
+| `v6.4/day 3` | `Jm28FM` | BenevolentSwan | **average** | 0 / 100 / 0 | 79.9 | \$3,671 | \$47.7 | 24% |
+| `v6.4/day 3` | `ZBC5hc` | SaffronDolphin | **average** | 0 / 100 / 0 | 80.0 | \$3,744 | \$20.0 | 100% |
+| `v6.4/day 3` | `bgyxT2` | HumongousLocust | **average** | 8 / 57 / 35 | 68.2 | \$1,227 | \$33.0 | 0% |
+| `v6.4/day 3` | `dky8iq` | CautiousWaxbill | **average** | 0 / 100 / 0 | 80.0 | \$3,739 | \$67.5 | 46% |
+| `v6.4/day 3` | `i4dcxg` | RadiantMussel | **average** | 0 / 100 / 0 | 80.0 | \$3,242 | \$47.3 | 81% |
+| `v6.4/day 3` | `kBd7jz` | PumpkinStallion | **low** | 99 / 1 / 0 | 24.4 | \$453 | \$12.8 | 0% |
+| `v6.4/day 3` | `oUuq4a` | DaringVole | **high** | 0 / 0 / 100 | 79.4 | \$2,734 | \$54.8 | 0% |
+| `v6.4/day 3` | `voC6oW` | BenevolentSwan | **average** | 4 / 93 / 3 | 57.9 | \$1,349 | \$18.2 | 0% |
+| `v6.4/day 3` | `wMr5JN` | DaringVole | **average** | 0 / 100 / 0 | 80.0 | \$3,660 | \$55.2 | 51% |
+| `v6.4/day 3` | `32vJ6q` | SageSloth | **average** | 0 / 100 / 0 | 79.9 | \$3,278 | \$39.2 | 96% |
+| `v6.4/day 3` | `33GLWe` | IndependentCoati | **average** | 0 / 100 / 0 | 67.2 | \$1,845 | \$29.6 | 0% |
+| `v6.4/day 3` | `36kvKj` | UncoveredSwift | **high** | 1 / 30 / 69 | 73.7 | \$2,485 | \$33.9 | 30% |
+| `v6.4/day 3` | `3EdkWq` | SaffronDolphin | **low** | 81 / 8 / 11 | 43.0 | \$920 | \$20.0 | 93% |
+| `v6.4/day 3` | `3KweHC` | BenevolentSwan | **high** | 2 / 12 / 86 | 75.6 | \$1,918 | \$26.0 | 54% |
+| `v6.4/day 3` | `3SQW5k` | HumongousLocust | **average** | 0 / 100 / 0 | 64.4 | \$3,277 | \$47.0 | 0% |
+| `v6.4/day 3` | `3SUJSr` | WittyRottweiler | **low** | 87 / 13 / 0 | 40.4 | \$741 | \$12.0 | 1% |
+| `v6.4/day 3` | `3adGrA` | UncoveredSwift | **average** | 0 / 100 / 0 | 80.0 | \$3,100 | \$37.4 | 61% |
+| `v6.4/day 3` | `3ePCsX` | ChirpyPython | **average** | 0 / 100 / 0 | 79.8 | \$3,770 | \$51.2 | 50% |
+| `v6.4/day 3` | `3gNBo5` | HumongousLocust | **average** | 0 / 97 / 3 | 79.7 | \$3,357 | \$45.0 | 13% |
+| `v6.4/day 3` | `3gkwQy` | RadiantMussel | **average** | 34 / 62 / 4 | 56.0 | \$1,008 | \$17.9 | 22% |
+| `v6.4/day 3` | `3qg3C9` | ConvivialCrane | **average** | 0 / 100 / 0 | 80.0 | \$3,850 | \$65.6 | 0% |
+| `v6.4/day 3` | `3tfX7Y` | SeriousLori | **low** | 100 / 0 / 0 | 20.3 | \$372 | \$18.0 | 0% |
+| `v6.4/day 3` | `3u7axK` | UncoveredSwift | **high** | 3 / 14 / 83 | 76.0 | \$1,916 | \$25.0 | 54% |
+| `v6.4/day 3` | `44E7M3` | PinkDuck | **low** | 88 / 12 / 0 | 31.4 | \$857 | \$17.8 | 0% |
+| `v6.4/day 3` | `49xmdY` | UncoveredSwift | **average** | 0 / 99 / 1 | 79.9 | \$2,944 | \$35.8 | 65% |
+| `v6.4/day 3` | `4GEg5z` | ChirpyPython | **average** | 2 / 98 / 0 | 74.3 | \$3,107 | \$40.7 | 4% |
+| `v6.4/day 3` | `4P4f3E` | PinkDuck | **average** | 0 / 100 / 0 | 69.5 | \$2,551 | \$42.0 | 0% |
+| `v6.4/day 3` | `4PjXt5` | ConvivialCrane | **average** | 2 / 98 / 0 | 75.8 | \$3,457 | \$61.5 | 0% |
+| `v6.4/day 3` | `4QiPcR` | RadiantMussel | **low** | 99 / 1 / 0 | 6.4 | \$116 | \$13.5 | 0% |
+| `v6.4/day 3` | `4U4n8S` | BenevolentSwan | **low** | 99 / 1 / 0 | 39.5 | \$714 | \$17.9 | 0% |
+| `v6.4/day 3` | `4WbgsQ` | ConvivialCrane | **high** | 0 / 1 / 99 | 79.0 | \$2,140 | \$28.4 | 0% |
+| `v6.4/day 3` | `LbthVK` | SaffronDolphin | **average** | 0 / 100 / 0 | 79.8 | \$3,813 | \$30.0 | 100% |
+| `v6.4/day 3` | `LdV3Br` | SageSloth | **average** | 14 / 71 / 15 | 66.1 | \$2,233 | \$34.8 | 99% |
+| `v6.4/day 3` | `VyuNhN` | ConvivialCrane | **low** | 90 / 10 / 0 | 22.5 | \$413 | \$16.5 | 0% |
+| `v6.4/day 3` | `ban3uw` | IndependentCoati | **average** | 0 / 100 / 0 | 79.9 | \$3,644 | \$49.0 | 9% |
+| `v6.4/day 3` | `ka4xgu` | ChirpyPython | **average** | 0 / 100 / 0 | 80.0 | \$3,884 | \$62.2 | 34% |
+| `v6.4/day 3` | `sUHH9m` | ChirpyPython | **low** | 100 / 0 / 0 | 0.0 | \$1 | \$11.4 | 50% |
+| `v6.4/day 3` | `32Ys5d` | WonderfulOxpecker | **low** | 81 / 19 / 0 | 34.0 | \$2,150 | \$68.6 | 0% |
+| `v6.4/day 3` | `39gaCq` | DaringVole | **average** | 0 / 100 / 0 | 76.5 | \$3,303 | \$55.2 | 0% |
+| `v6.4/day 3` | `3BZra3` | IntrepidBeluga | **low** | 100 / 0 / 0 | 14.9 | \$421 | \$27.1 | 0% |
+| `v6.4/day 3` | `3NA24f` | SageSloth | **average** | 0 / 99 / 1 | 79.5 | \$3,506 | \$44.6 | 77% |
+| `v6.4/day 3` | `3YX79a` | WonderfulOxpecker | **low** | 99 / 1 / 0 | 16.8 | \$344 | \$13.9 | 0% |
+| `v6.4/day 3` | `3gjpbG` | SuperGoshawk | **average** | 0 / 100 / 0 | 80.0 | \$3,755 | \$49.7 | 2% |
+| `v6.4/day 3` | `3iRTkX` | SuperGoshawk | **average** | 0 / 100 / 0 | 80.0 | \$3,804 | \$61.5 | 4% |
+| `v6.4/day 3` | `3oTAhD` | IntrepidBeluga | **low** | 100 / 0 / 0 | 21.3 | \$640 | \$29.0 | 0% |
+| `v6.4/day 3` | `3pLD9b` | ProficientCivet | **high** | 7 / 43 / 50 | 70.5 | \$1,751 | \$26.8 | 4% |
+| `v6.4/day 3` | `3v4zeU` | WonderfulOxpecker | **average** | 45 / 48 / 7 | 57.2 | \$1,030 | \$21.8 | 0% |
+| `v6.4/day 3` | `3zWDSW` | RadiantMussel | **average** | 0 / 100 / 0 | 80.0 | \$4,097 | \$60.2 | 97% |
+| `v6.4/day 3` | `3zrvmF` | IndigoJackal | **low** | 50 / 0 / 50 | 42.1 | \$1,259 | \$12.0 | 99% |
+| `v6.4/day 3` | `43TgVW` | IndigoJackal | **low** | 100 / 0 / 0 | 0.0 | \$1 | \$10.0 | 99% |
+| `v6.4/day 3` | `47Vgmu` | WonderfulOxpecker | **high** | 4 / 29 / 67 | 73.6 | \$1,750 | \$29.0 | 0% |
+| `v6.4/day 3` | `4B67cq` | IndigoJackal | **average** | 0 / 100 / 0 | 79.6 | \$3,803 | \$35.0 | 100% |
+| `v6.4/day 3` | `4VzeY4` | WittyRottweiler | **average** | 0 / 100 / 0 | 79.8 | \$4,139 | \$45.0 | 100% |
+| `v6.4/day 3` | `6ursDg` | WittyRottweiler | **high** | 17 / 28 / 55 | 69.0 | \$2,009 | \$30.0 | 66% |
+| `v6.4/day 3` | `8wKEdB` | IndigoJackal | **average** | 0 / 100 / 0 | 79.9 | \$3,901 | \$24.0 | 99% |
+| `v6.4/day 3` | `AUsmtN` | ProficientCivet | **low** | 69 / 31 / 0 | 38.7 | \$702 | \$18.0 | 0% |
+| `v6.4/day 3` | `F75B2Y` | UncoveredSwift | **average** | 18 / 68 / 14 | 63.4 | \$1,998 | \$32.0 | 1% |
+| `v6.4/day 3` | `GAsaxq` | SeriousLori | **average** | 0 / 100 / 0 | 80.0 | \$3,894 | \$59.5 | 46% |
+| `v6.4/day 3` | `Q73Qxc` | SuperGoshawk | **low** | 100 / 0 / 0 | 7.8 | \$140 | \$10.4 | 0% |
+| `v6.4/day 3` | `SmHbvn` | DaringVole | **average** | 0 / 88 / 12 | 79.8 | \$3,455 | \$55.1 | 16% |
+| `v6.4/day 3` | `Wic92Q` | UncoveredSwift | **low** | 99 / 1 / 0 | 28.7 | \$1,016 | \$35.8 | 0% |
+| `v6.4/day 3` | `YPEyfc` | SageSloth | **average** | 0 / 70 / 30 | 68.1 | \$1,501 | \$23.3 | 0% |
+| `v6.4/day 3` | `sP7Sjx` | RadiantMussel | **low** | 77 / 22 / 1 | 42.8 | \$807 | \$16.9 | 15% |
+| `v6.4/day 3` | `tLYUb7` | SeriousLori | **high** | 34 / 10 / 56 | 60.5 | \$1,540 | \$28.0 | 39% |
+| `v6.4/day 3` | `vDR7ch` | VersatileOrca | **average** | 0 / 94 / 6 | 60.0 | \$1,342 | \$28.0 | 0% |
+| `v6.4/day 3` | `wnfFkX` | SuperGoshawk | **low** | 35 / 33 / 32 | 65.0 | \$1,341 | \$23.8 | 13% |

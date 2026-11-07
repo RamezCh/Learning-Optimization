@@ -1,38 +1,38 @@
 {
  "low_demand": {
-  "intercept": 0.1329,
-  "B": -0.0041,
-  "C": 0.0037,
-  "b_t": 0.176,
-  "avg_demand": 0.206,
-  "days": 566720,
-  "r2": 0.05,
-  "holdout_r2": 0.047,
-  "seasons": 5352,
-  "matches": 59
+  "intercept": 0.137,
+  "B": -0.0035,
+  "C": 0.0033,
+  "b_t": 0.1651,
+  "avg_demand": 0.214,
+  "days": 1365518,
+  "r2": 0.028,
+  "holdout_r2": 0.027,
+  "seasons": 13620,
+  "matches": 201
  },
  "average_demand": {
-  "intercept": 0.5927,
-  "B": -0.0064,
-  "C": 0.002,
-  "b_t": 0.5405,
-  "avg_demand": 0.69,
-  "days": 136130,
-  "r2": 0.037,
-  "holdout_r2": 0.04,
-  "seasons": 1397,
-  "matches": 35
+  "intercept": 0.4987,
+  "B": -0.0151,
+  "C": 0.0144,
+  "b_t": 0.4499,
+  "avg_demand": 0.698,
+  "days": 1185081,
+  "r2": 0.096,
+  "holdout_r2": 0.095,
+  "seasons": 12616,
+  "matches": 217
  },
  "high_demand": {
-  "intercept": 1.0198,
-  "B": -0.0452,
-  "C": 0.0297,
-  "b_t": 0.7029,
-  "avg_demand": 0.785,
-  "days": 54720,
-  "r2": 0.129,
-  "holdout_r2": 0.128,
-  "seasons": 551,
-  "matches": 10
+  "intercept": 0.5376,
+  "B": -0.0167,
+  "C": 0.0092,
+  "b_t": 1.0032,
+  "avg_demand": 0.772,
+  "days": 355854,
+  "r2": 0.142,
+  "holdout_r2": 0.144,
+  "seasons": 3664,
+  "matches": 98
  }
 }

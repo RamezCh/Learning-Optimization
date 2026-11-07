@@ -54,13 +54,22 @@ SHORT = {"low_demand": "low", "average_demand": "average", "high_demand": "high"
 
 # Algorithm version that produced each dataset (who "we" are in the log).
 VERSION_OF = {"v1": "v1.0", "v3": "v3.0", "v4": "v4.1", "v5": "v5.0", "v5.1": "v5.1",
-              "mlr": "MLR variant", "poisson_logit": "Poisson-logit variant", "v6": "v6.3"}
+              "mlr": "MLR variant", "poisson_logit": "Poisson-logit variant", "v6": "v6.3",
+              "v6.4/day 1": "v6.4", "v6.4/day 2": "v6.4", "v6.4/day 3": "v6.4"}
+
+
+def _dataset_name(path: str) -> str:
+    """Folder relative to data/, e.g. 'v5' or 'v6.4/day 2' (container copies 'v6.4d2' map to the same name)."""
+    rel = os.path.relpath(os.path.dirname(path), DATA_DIR).replace(os.sep, "/")
+    if rel.startswith("v6.4d"):
+        rel = "v6.4/day " + rel[len("v6.4d"):]
+    return rel
 
 
 def load_all() -> pd.DataFrame:
     frames = []
-    for path in sorted(glob.glob(os.path.join(DATA_DIR, "*", "*.csv"))):
-        folder = os.path.basename(os.path.dirname(path))
+    for path in sorted(glob.glob(os.path.join(DATA_DIR, "**", "*.csv"), recursive=True)):
+        folder = _dataset_name(path)
         frame = pd.read_csv(path)
         frame["dataset"] = folder
         frame["file"] = os.path.basename(path)
@@ -187,12 +196,16 @@ def write_markdown(match: pd.DataFrame, seasons: pd.DataFrame, priors: Dict) -> 
         q = REGIME_PRESETS_MLR[regime]
         lines.append(f"| {SHORT[regime]} | {q['intercept']} | {q['B']} | {q['C']} | {q['b_t']} |")
     lines += ["",
-              "The refitted models were tested in `duopoly.py` (2026-10-31) and **not adopted**: revenue changed by "
-              "−0.8% on the `data/v6` test bed and by +0.8% / −0.4% / −0.2% (average / high / low) on the old "
-              "simulator, within noise. Blending the pooled model into each match's own fit (weight 500 or 2,000 days) "
-              "did not help either. These models only set prices until a match has 80 days of its own data "
-              "(most of season 1); after that each match's own fit describes that match better than pooled data "
-              "(pooled fits explain 4–13% of daily sales). See ALGORITHM_CHANGES §20.8.",
+              "Refitted models were tested in `duopoly.py` twice and **not adopted**:",
+              "",
+              "* 2026-10-31 (data up to `data/v6`): −0.8% on the `data/v6` test bed; +0.8% / −0.4% / −0.2% "
+              "(average / high / low) on the old simulator. See ALGORITHM_CHANGES §20.8.",
+              "* 2026-11-07 (with `data/v6.4` days 1–3, ~2.9M days): −0.8% on the `data/v6.4` test bed "
+              "(76 matches; 6 better, 4 worse, range −16% to +35%). See ALGORITHM_CHANGES §21.4.",
+              "",
+              "These models only set prices until a match has 80 days of its own data (most of season 1); after "
+              "that each match's own fit describes that match better than pooled data (pooled fits explain 3–14% "
+              "of daily sales).",
               "", "## Datasets", "",
               "| Folder | File | Algorithm | Matches | low / average / high seasons | Seats per season |",
               "| :--- | :--- | :--- | :---: | :---: | :---: |"]

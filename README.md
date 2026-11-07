@@ -365,10 +365,10 @@ After every competition run, a comprehensive CSV report is generated containing 
 
 ---
 
-## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.4)
+## 4. Our Strategic Pricing Architecture (`duopoly.py` — v6.5)
 
 > [!IMPORTANT]
-> For the full history (`v1.0` → `v6.4`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve. v6.3 (§19) tests every part by switching it off, fixes a circuit-breaker bug found that way, and removes the regime priors of the target curve. v6.4 (§20) follows the first tournaments run with v6.3 (`data/v6`), where markets were far too small to fill 80 seats: when capacity cannot bind it prices for revenue only, and it holds one price against a rival that copies us (§4.7 below).
+> For the full history (`v1.0` → `v6.5`) including tournament post-mortems, see [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md). v6.1 (§17 there) fixes four bugs in v6.0 that made the regime logic collapse to "always low demand" from season 2 on. v6.2 (§18) learns the shape of the target curve from each market instead of using one fixed curve. v6.3 (§19) tests every part by switching it off, fixes a circuit-breaker bug found that way, and removes the regime priors of the target curve. v6.4 (§20) follows the first tournaments run with v6.3 (`data/v6`), where markets were far too small to fill 80 seats: when capacity cannot bind it prices for revenue only, and it holds one price against a rival that copies us (§4.7 below). v6.5 (§22) replaces the hand-tuned seat value μ with dynamic programming on the fitted choice model and switches off the hand-made band, guards and clearance while that DP price is active (§4.8 below).
 
 `duopoly.py` combines a **closed-form price from a linear demand regression** with a small set of **guards** for situations where the regression is unreliable (cheap or very expensive rivals, monopoly, the last days of a season). Since v6.4 it first asks whether capacity can bind at all: if the market cannot fill the plane, or the rival copies our price, it switches to **market-sized pricing** (μ = 0) with a choice-demand model fitted to the match.
 
@@ -404,6 +404,7 @@ flowchart TD
 | **7. Guards** | Cheap-rival floor, high-rival ceiling (\$26–\$48 when rival ≥ \$58), late-season rules, terminal clearance at $t \ge 90$, deep-dumper holdout with a safe deadline, two-season circuit breaker (only against a rival under \$38, since v6.3). | Situations where a linear demand model fitted on our own history is not trustworthy. |
 | **8. Market sizing (v6.4)** | A choice-demand model is fitted to our own sales at every season end and every 25 days: buyers per day $\sim \text{Poisson}(n e^{k\tau})$, each buying from us with probability $\frac{e^{b(m-p)}}{1 + e^{b(m-p)} + e^{b(m-r)}}$. Every day: price each remaining day at its revenue-maximising price and add up the expected seats. If that is ≤ 90% of the seats left, μ = 0 and the price is $\arg\max_p\ p \cdot \text{seats}(p, r, \tau)$ (\$18–\$100); the target curve and the gap-driven guards are skipped. After 7 days without a sale, −\$1 per extra dry day. | In `data/v6` no market could fill 80 seats; chasing the plan pushed v6.3 to \$18–\$26 everywhere. Unlike the linear model, the choice model also learns from days with zero sales. |
 | **9. Copying rival (v6.4)** | Copier = rival's price within \$0.60 of our previous day's price on ≥ 80% of the last 20 days on which we moved. Hold one price all season, no clearance; between seasons move it \$3 up or down and keep the direction that earned more per day (smaller steps after a drop). | FlashyInchworm copied us on 99% of days; v6.3's clearance dragged both to \$18 for 99 seasons. |
+| **10. Data-driven seat value (v6.5)** | Once the choice model of component 8 is fitted: $V(t,s) = \max_p E[p\min(D,s) + V(t+1, s-\min(D,s))]$ by backward induction from day 100, rival at its 5-day average, prices \$18–\$100. μ = $V(t+1,s) - V(t+1,s-1)$ and the price is the maximising $p$. Rebuilt every 10 days (~5 ms). The ±rival band, guards 1–2 and the late clearance are skipped while it is active; the monopoly rule stays. | The hand formula for μ was tuned by eye; the DP derives it from the match's own demand. On the v6.4 test bed: +10.9% revenue, 44 matches better / 2 worse (ALGORITHM_CHANGES §22). |
 
 ### 4.1 Regime priors
 
@@ -470,11 +471,11 @@ When the rival's recent average is ≥ \$58, the price is capped at $\operatorna
 
 `python analytics/benchmark_3regime_models.py --compare <old_duopoly.py>` runs 3 simulated markets × 4 rivals × 5 seeds × 30 seasons. Mean revenue per season, summed over the 4 rivals:
 
-| Market (simulated) | v6.4 | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Low (~68 arrivals, WTP \$20–\$48) | **\$4,617** | \$4,059 | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
-| Average (~95 arrivals, WTP \$35–\$92) | **\$8,889** | \$8,164 | \$8,192 | \$7,840 | \$7,787 | \$5,286 |
-| High (~135 arrivals, WTP \$25–\$78) | **\$10,220** | \$10,045 | \$10,055 | \$9,758 | \$9,838 | \$5,547 |
+| Market (simulated) | v6.5 | v6.4 | v6.3 | v6.2 | v6.1 (with A2) | v6.0 | Naive "rival − \$1" |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Low (~68 arrivals, WTP \$20–\$48) | \$4,610 | **\$4,617** | \$4,059 | \$3,324 | \$3,328 | \$3,035 | \$1,425 |
+| Average (~95 arrivals, WTP \$35–\$92) | **\$9,020** | \$8,889 | \$8,164 | \$8,192 | \$7,840 | \$7,787 | \$5,286 |
+| High (~135 arrivals, WTP \$25–\$78) | **\$10,728** | \$10,220 | \$10,045 | \$10,055 | \$9,758 | \$9,838 | \$5,547 |
 
 95% confidence intervals per cell are printed by the script, typically ±\$15–\$75 per rival. v6.4 gains +13.7% (low), +8.9% (average) and +1.7% (high) over v6.3 and is equal or better against every rival except the copycat in the low market (\$850 → \$733 ± 93): that simulated copycat never prices below \$25, so v6.3 could undercut it, while the real copier in `data/v6` followed us down to \$18 (§4.7). Against the aggressive dumper the naive strategy still does better in the average market (\$1,437 vs \$1,401 for v6.4; v6.3: \$1,311); in the high market v6.4 now beats it (\$1,940 vs \$1,867). v6.3's gain is the circuit-breaker fix in the low market against the bounded rival (\$188 → \$927 per season); average and high are unchanged within noise. Most of v6.2's gain comes from the old v1.0 rival (+13% average, +7.5% high); over 17 scenarios including 5 replayed tournament rivals and 10 seeds, v6.2 earns +1.95% ± 0.23% more than v6.1 (ALGORITHM_CHANGES §18.4). This is a simulator with hand-chosen parameters, so treat it as a regression test rather than a forecast of tournament results.
 
@@ -503,7 +504,7 @@ Measured on v6.3; v6.4's market-sized branch is evaluated in §4.7. `python anal
 * **Why v6.3 lost money:** it chased an 80-seat plan these markets could not deliver, so the gap pushed every guard to its lowest price (\$26 against rivals at \$80–\$100); and its season-end clearance started a price war with a rival that copies our price (Panel C).
 * **A demand model fitted per match reproduces the data (Panel D):** about 47 buyers per season, with a willingness-to-pay midpoint of about \$45–\$55 or \$15–\$20.
 
-v6.4 adds market sizing and copier handling (components 8 and 9 above). `analytics/v6_testbed.py` replays the 34 matches with that fitted demand and the logged rival prices (v6.3 replayed: \$1,589,865 vs \$1,587,858 actually earned):
+v6.4 adds market sizing and copier handling (components 8 and 9 above). Results of the v6.4 tournaments (9 tournaments, 226 matches), a v6.4-based test bed (`analytics/v64_testbed.py`) and the data-driven seat value candidate are in ALGORITHM_CHANGES §21. `analytics/v6_testbed.py` replays the 34 matches with that fitted demand and the logged rival prices (v6.3 replayed: \$1,589,865 vs \$1,587,858 actually earned):
 
 ![v6.4 test bed results](imgs/v64_testbed_results.png)
 
@@ -516,6 +517,19 @@ v6.4 adds market sizing and copier handling (components 8 and 9 above). `analyti
 No match loses more than 1%. On the old simulator (a different demand model) v6.4 gains +13.7% (low), +8.9% (average) and +1.7% (high), §4.5. The test bed uses the same model family that v6.4 fits and its rivals do not react, so treat +24% as an upper estimate of the tournament effect.
 
 ---
+
+### 4.8 v6.5: data-driven seat value
+
+v6.4 priced with $p^* = (A - B\mu)/(-2B)$, where μ came from a hand-tuned formula of pace and gap. v6.5 derives μ from the match's own fitted choice model by dynamic programming (component 10) and takes the DP's price directly. Each hand-made rule around it was then switched on and off on the `data/v6.4` test bed (two halves of 38 matches each):
+
+| Variant (76 matches) | Revenue vs v6.4 | Better / worse | Worst match |
+| :--- | :---: | :---: | :---: |
+| DP price inside the old band and guards | +1.6% (38 matches) | 13 / 3 | −1.3% |
+| Band off | +6.3% | 39 / 6 | −2.8% |
+| Everything off, incl. DP monopoly price | +13.2% | 43 / 4 | −11.3% |
+| **v6.5: band, guards, clearance off; hand monopoly rule kept** | **+10.9%** | **44 / 2** | **−2.4%** |
+
+On the simulator, whose buyers do not follow the choice model, v6.5 gains −0.2% / +1.5% / +5.0% (low / average / high, §4.5). The test bed shares the DP's demand model, so +10.9% is an upper estimate. Full tables: ALGORITHM_CHANGES §22.
 
 ## 5. Local Simulation & Submission Workflow
 

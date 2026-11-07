@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.4).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.5).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -48,6 +48,19 @@ Architectural Overview:
    - High-Rival Dynamic Ceiling ($26-$48) preventing consumer dead zones.
    - Terminal Clearance Acceleration at t >= 90 (perishable $0 salvage value).
    - Monotonicity & Elasticity Guards: B <= -0.006, rival coefficient C >= 0.
+8. Data-Driven Seat Value (v6.5, from the data/v6.4 tournaments):
+   Once the choice model of component 6 is fitted, the hand-tuned mu of component 5 is replaced
+   by dynamic programming on that model. With D ~ Poisson(choice-model rate), rival held at its
+   5-day average price, prices $18-$100 in $1 steps:
+       V(t, s) = max_p E[ p * min(D, s) + V(t+1, s - min(D, s)) ],   V(101, s) = 0
+       mu      = V(t+1, s) - V(t+1, s-1)      (value of one more seat after today)
+   and today's price is the maximising p (the DP policy), not the regression formula. The DP is
+   recomputed every 10 days, each new season and whenever the model is refitted (~5 ms).
+   While the DP price is active, the hand-made +$12 / -undercut band around the rival, guards
+   1-2 and the late-season clearance are skipped; the monopoly rule (rival sold out) and the
+   market-sizing / copier branches still apply. Switches DP_* at the end of the file;
+   ALGORITHM_CHANGES.md section 22 has the on/off tests (+10.9% on the v6.4 test bed). Before the choice model
+   is fitted (first season), the hand formula of component 5 is still used.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -214,6 +227,8 @@ def p(
     if period % LOGIT_REFIT_EVERY == 0:
         _fit_logit_demand(state)
     state["unconstrained"] = _capacity_is_slack(period, remaining_capacity, state)
+    state["seats_left_now"] = remaining_capacity
+    state["period_now"] = period
 
     # 6. Pricing Decision Engine (Monopoly vs Duopoly Regimes)
     if not competitor_has_capacity_current_period_in_current_season:
@@ -656,6 +671,10 @@ def _calculate_monopoly_price(
     Bands come from observed monopoly conversion (data/v4, data/v5): revenue per period
     peaks around $45-$55 and conversion collapses above ~$70 when WTP is truncated.
     """
+    if DP_MONOPOLY:
+        dp = _dp_monopoly_price(state.get("period_now", 1), remaining_capacity, state)
+        if dp is not None:
+            return dp
     regime = state.get("detected_regime", "average_demand")
     preset = REGIME_PRESETS_MLR.get(regime, REGIME_PRESETS_MLR["average_demand"])
     p_low, p_high = preset["monopoly_band"]
@@ -723,6 +742,12 @@ def _calculate_duopoly_price(
         state
     )
 
+    if DP_SKIP_GUARDS and state.get("dp_active"):
+        if period >= 75 and not DP_SKIP_CLEARANCE:
+            return _apply_late_season_clearance(period, target_price, rival_recent_avg, inventory_gap,
+                                                required_burn_rate, remaining_capacity, is_low_wtp)
+        return target_price
+
     # Guard 1: Cheap-Rival Floor
     # Against a cheap rival (< $38) we follow just below it instead of holding a $35-$44 anchor:
     # in data/v3-v5, pricing below a < $38 rival earned ~$40/period vs ~$15-$20/period when
@@ -741,7 +766,7 @@ def _calculate_duopoly_price(
             target_price = duopoly_cap - 2.0
 
     # Guard 3: Late-Season Clearance & Spoilage Ramp (t >= 75)
-    if period >= 75:
+    if period >= 75 and not (DP_SKIP_CLEARANCE and state.get("dp_active")):
         target_price = _apply_late_season_clearance(
             period,
             target_price,
@@ -918,8 +943,16 @@ def _solve_closed_form_optimal_price(
     # Dynamic capacity shadow cost mu(t, c)
     is_low_wtp = state.get("detected_low_wtp", False)
     mu = _compute_capacity_shadow_cost(inventory_gap, required_burn_rate, is_low_wtp)
+    mu_dp = _dp_seat_value(period, state.get("seats_left_now", 0), rival_price, state)
+    if mu_dp is not None:
+        mu = mu_dp
 
     optimal_p = (A - B * mu) / (2.0 * (-B))
+    state["dp_active"] = mu_dp is not None
+    if mu_dp is not None and "dp_price" in state:
+        optimal_p = state["dp_price"]
+        if not DP_BAND:
+            return float(optimal_p)
 
     # Margin-Preserving Undercut Boundary:
     max_cap = 8.50 if is_low_wtp else 7.50
@@ -973,3 +1006,68 @@ def _clamp_price(price: float, state: Optional[Dict[str, Any]] = None) -> float:
 def _persist_decision(price: float, state: Dict[str, Any]) -> None:
     """Records the chosen price in state dictionary."""
     state["my_last_price"] = price
+
+
+# -----------------------------------------------------------------------------
+# v6.5: seat value from dynamic programming on the fitted choice model
+# Switches below were tested on/off on the v6.4 test bed (ALGORITHM_CHANGES.md section 22).
+# -----------------------------------------------------------------------------
+DP_PRICE_GRID = np.arange(18.0, 100.01, 1.0)
+DP_KMAX = 7
+DP_REFRESH_DAYS = 10
+DP_BAND = False            # True: clip the DP price to [rival - undercut, rival + 12]
+DP_SKIP_GUARDS = True      # True: skip guards 1-2 when the DP price is active
+DP_SKIP_CLEARANCE = True   # True: skip the late-season clearance when the DP price is active
+DP_MONOPOLY = False        # True: DP price (no rival) when the rival is sold out
+
+
+def _dp_values(theta, rival, start_day):
+    """V[t][s] = expected revenue from day t to 100 with s seats, pricing optimally each day
+    (rival held at `rival`). Demand per day ~ Poisson(choice-model rate), capped at seats left."""
+    fact = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880], dtype=float)[:DP_KMAX + 1]
+    S = DEFAULT_TOTAL_CAPACITY
+    seats = np.arange(S + 1)
+    k = np.arange(DP_KMAX + 1)
+    sold = np.minimum(k[None, :], seats[:, None])            # (S+1, K+1)
+    idx = seats[:, None] - sold
+    V = np.zeros((TOTAL_SELLING_PERIODS + 2, S + 1))
+    POL = np.zeros((TOTAL_SELLING_PERIODS + 2, S + 1))
+    for t in range(TOTAL_SELLING_PERIODS, start_day - 1, -1):
+        lam = _logit_rate(theta, DP_PRICE_GRID, rival, (t - 1) / float(TOTAL_SELLING_PERIODS - 1))
+        pmf = np.exp(-lam)[:, None] * lam[:, None] ** k[None, :] / fact[None, :]
+        pmf[:, -1] = 1.0 - pmf[:, :-1].sum(axis=1)          # lump the tail into K
+        exp_sold = pmf @ sold.T                               # (P, S+1)
+        cont = pmf @ V[t + 1][idx].T                          # (P, S+1)
+        tot = DP_PRICE_GRID[:, None] * exp_sold + cont
+        V[t] = tot.max(axis=0); POL[t] = DP_PRICE_GRID[tot.argmax(axis=0)]
+    return V, POL
+
+
+def _dp_monopoly_price(period, seats_left, state):
+    """Rival sold out: DP price with no rival (it stays sold out for the rest of the season)."""
+    if not state.get("logit_fitted", False) or seats_left <= 0:
+        return None
+    cache = state.get("dp_mono_cache")
+    if cache is None or cache["season"] != state.get("last_season_seen") or cache["theta"] != state["logit_theta"]:
+        V, POL = _dp_values(np.array(state["logit_theta"]), 1000.0, period)
+        cache = {"season": state.get("last_season_seen"), "theta": list(state["logit_theta"]), "POL": POL}
+        state["dp_mono_cache"] = cache
+    return float(cache["POL"][period][seats_left])
+
+
+def _dp_seat_value(period, seats_left, rival_price, state):
+    """mu = value of keeping one more seat after today: V[t+1][s] - V[t+1][s-1]."""
+    if not state.get("logit_fitted", False) or seats_left <= 0:
+        return None
+    cache = state.get("dp_cache")
+    stale = (cache is None or cache["season"] != state.get("last_season_seen") or period - cache["day"] >= DP_REFRESH_DAYS
+             or cache["theta"] != state["logit_theta"])
+    if stale:
+        recent = state.get("rival_recent_prices", [])
+        rival = float(np.mean(recent[-5:])) if recent else float(rival_price)
+        V, POL = _dp_values(np.array(state["logit_theta"]), rival, period)
+        cache = {"season": state.get("last_season_seen"), "day": period, "theta": list(state["logit_theta"]), "V": V, "POL": POL}
+        state["dp_cache"] = cache
+    V = cache["V"]
+    state["dp_price"] = float(cache["POL"][period][seats_left])
+    return float(V[period + 1][seats_left] - V[period + 1][seats_left - 1])

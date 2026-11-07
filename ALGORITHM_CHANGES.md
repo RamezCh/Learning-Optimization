@@ -967,3 +967,118 @@ Labelled this way, the 73 matches give 59 low, 35 average and 10 high matches (a
 | Refitted + blended (2,000 days) | \$1,961,972 (−0.8%) | \$4,610 / \$8,944 / \$10,106 |
 
 Not adopted. More pooled data does not help here because the regime models only set prices until a match has 80 days of its own data (most of season 1): at every season end each match refits on its own sales, which describe that match better than pooled data (pooled fits explain 4–13% of daily sales; holdout $R^2$ 0.04–0.13). In practice only the average model is used, in season 1; the low and high models would apply only if a regime were detected before 80 observations, which does not happen. In small markets v6.4 prices with the choice model (§20.4), not the linear one.
+
+---
+
+## 21. Final-v6 Tournaments (`data/v6.4`, days 1–3), a Data-Driven Seat Value, and Refitted Regime Models
+
+### 21.1 What `data/v6.4` contains
+
+Nine DPC tournaments played by v6.4 over three days, 226 matches × 100 seasons. Replaying `duopoly.py` on these logs reproduces the logged price on 90% of days (107 of 141 day 1–2 matches on 95%+), so the logs are this algorithm.
+
+| Day | Tournaments (our rank) | Matches | Seats sold | Revenue per season | We sold out | Rival sold out | Our / rival median price |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 | 12 · 17 · 33 | 54 | 72% | \$2,098 | 27–34% of seasons | 23–47% | \$32–35 / \$34–43 |
+| 2 | **1** · 4 · 10 | 87 | 60% | \$1,538 | 17–21% | 18–25% | \$22–27 / \$24–26 |
+| 3 | 3 · 4 · 5 | 85 | 74% | \$2,151 | 34–44% | 26–30% | \$32–34 / \$31–34 |
+
+When we sell out it is late (median day 85–99). Selling out is not the goal in itself: selling out early means the price was too low, unsold seats mean it was too high. The goal stays revenue per season.
+
+### 21.2 Test bed rebuilt from `data/v6.4`
+
+`analytics/v64_testbed.py` follows `v6_testbed.py` (§20.3) on the new logs: a choice model fitted per match (`analytics/v64_demand_fits.json`), the rival replays its logged prices **and its logged sold-out days**, rivals that copy our previous price on ≥ 80% of days are simulated as copiers (14 of 226 matches). `--sample k --offset j` runs every k-th match. Validation on 38 matches: the replay of today's `duopoly.py` is within 0.2% of the actual revenue in the median match (+8% in total; the replay is mildly optimistic in a few matches).
+
+### 21.3 Seat value μ from dynamic programming (candidate, not yet adopted)
+
+μ is the money one more unsold seat would still earn before day 100. v6.4 sets it by hand, μ = 26 − 16·(pace − 0.8) − 2.4·gap. The candidate derives it from the choice model the algorithm already fits (§20.4):
+
+1. Backward induction from day 100: for every seats-left value s = 0…80 and every price $18…$100, today's expected revenue is p·E[min(D, s)] and the future is V(t+1, s − min(D, s)), with D ~ Poisson(choice-model rate at that price, rival at its 5-day average). V(t, s) is the best of these; the maximising price is the policy.
+2. μ(t, s) = V(t+1, s) − V(t+1, s − 1): what the last seat is worth tomorrow.
+3. The table is rebuilt every 10 days and whenever the choice model is refitted; one rebuild takes ~5 ms.
+
+Example (≈ 46 buyers per season, rival \$80, day 50): μ = \$42 with 10 seats left, \$3.60 with 30, \$0 with 46+ (seats are not scarce, the same answer market sizing gives). In a market three times larger μ stays at \$9–\$43.
+
+| Version (`data/v6.4` test bed, 1 seed) | Matches | Revenue vs v6.4 | Better / worse (> 0.5%) | Worst match |
+| :--- | :---: | :---: | :---: | :---: |
+| DP μ plugged into the regression price formula | 38 | −1.5% | – | −14.0% |
+| **DP μ and the DP price** (kept inside the rival band and guards) | 76 | **+1.05%** | 25 / 6 | −3.9% |
+
+The first try mixed models: μ from the choice model, price from the linear regression. In very price-sensitive markets the two disagree and the price went wrong. Taking the price from the same calculation fixes it. Largest gain: a match where v6.4 sold out in 94% of seasons (underpricing) → 44% sell-outs, +30% revenue. About half the matches do not change, because market sizing, copier handling, the dumper rule and the guards set the price there.
+
+Status at the time: **candidate**, kept in `analytics/experiments/duopoly_dp_mu.py` (adopted in v6.5, §22). The test bed generates demand with the same model family the candidate optimises, so +1% is an upper estimate. Next: all 226 matches × 3 seeds, then let the DP price replace the hand-tuned guards one at a time.
+
+### 21.4 Regime models refitted on all data (tested again, not adopted)
+
+`analytics/fit_regime_priors.py` now reads nested folders (`data/v6.4/day N/`) and labels all 11 datasets; see [`DATA_REGISTRY.md`](DATA_REGISTRY.md). With v6.4 the data grows from 0.76M to 2.9M days:
+
+| Regime | Seasons (before) | Days | $\beta_0$ | $B$ | $C$ | $\beta_t$ | Holdout $R^2$ |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| low | 13,620 (5,352) | 1,365,518 | 0.137 | −0.0035 | 0.0033 | 0.165 | 0.027 |
+| average | 12,616 (1,397) | 1,185,081 | 0.499 | −0.0151 | 0.0144 | 0.450 | 0.095 |
+| high | 3,664 (551) | 355,854 | 0.538 | −0.0167 | 0.0092 | 1.003 | 0.144 |
+
+| Version (`data/v6.4` test bed, 76 matches) | Revenue vs v6.4 | Better / worse (> 0.5%) | Range |
+| :--- | :---: | :---: | :---: |
+| Refitted regime models | −0.81% | 6 / 4 | −16.2% to +34.8% |
+| Refitted models + DP μ and price (§21.3) | +0.18% | 29 / 7 | −16.2% to +34.8% |
+| DP μ and price alone | +1.05% | 25 / 6 | −3.9% to +29.8% |
+
+Not adopted, for the same reason as §20.8: the pooled models only set the price until a match has 80 days of its own data, and 70 of 76 matches do not change. The few that do move both ways by large amounts (season-1 prices change the copier search and early learning), so the total is noise. Pooled fits still explain only 3–14% of daily sales.
+
+## 22. v6.5: Data-Driven Seat Value, Hand-Made Rules Switched Off
+
+v6.5 adopts the DP seat value of §21.3 and then tests, one at a time, which hand-made rules around it still earn their place. The refitted regime models of §21.4 are **not** used.
+
+### 22.1 What changed in `duopoly.py`
+
+1. Once the choice model is fitted (end of season 1), μ comes from dynamic programming on it instead of the hand formula `μ = clip(26 − 16·(pace − 0.8) − 2.4·gap, 10, 56)`:
+   $V(t,s) = \max_p E[\,p\cdot\min(D,s) + V(t+1,\,s-\min(D,s))\,]$, $\mu = V(t+1,s) - V(t+1,s-1)$, with $D \sim$ Poisson(choice-model rate), the rival held at its 5-day average, prices \$18–\$100 in \$1 steps. Today's price is the maximising $p$.
+2. Four switches at the end of the file (`DP_*`) decide which hand-made rules still apply while the DP price is active. The tested values are below; the chosen ones are in bold.
+3. Before the choice model is fitted (first season) and in the branches that already set the price from data (market sizing, copier search), nothing changes.
+
+### 22.2 Rules switched on/off (`data/v6.4` test bed, 1 seed, 100 seasons per match)
+
+Two separate halves of the matches (set A = every 6th match, set B = every 6th from the 4th), so a rule chosen on A is checked on B. Baseline v6.4: set A \$7,649,220, set B \$7,205,841.
+
+| Variant | Band ±rival | Guards 1–2 | Clearance (t ≥ 75) | Monopoly rule | Set A | Set B | All 76: revenue | Better / worse (> 0.5%) | Worst match | Sell-out |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| v6.4 | (hand μ) | on | on | hand | – | – | – | – | – | 26.1% |
+| DP inside band and guards (§21.3) | on | on | on | hand | +1.60% | – | – | 13 / 3 (A) | −1.3% | 25.6% (A) |
+| no band | **off** | on | on | hand | +9.92% | +2.43% | +6.29% | 39 / 6 | −2.8% | 31.4% |
+| skip guards only | on | off | on | hand | +1.73% | – | – | 14 / 5 (A) | −22.0% | 23.8% (A) |
+| skip clearance only | on | on | off | hand | +0.73% | – | – | 6 / 6 (A) | −3.4% | 19.9% (A) |
+| DP monopoly price only | on | on | on | DP | +5.35% | +0.44% | +2.96% | 29 / 6 | −10.0% | – |
+| no band + DP monopoly | off | on | on | DP | – | +2.15% | – | 18 / 2 (B) | −12.3% | 31.3% (B) |
+| everything off | off | off | off | DP | +20.23% | +5.71% | +13.18% | 43 / 4 | −11.3% | 31.0% |
+| **v6.5: everything off except the monopoly rule** | **off** | **off** | **off** | **hand** | – | – | **+10.90%** | **44 / 2** | **−2.4%** | 30.3% |
+
+Reading the table:
+- The ±rival band was the main brake: the DP wants to price \$15–30 above a cheap rival in markets that buy anyway, and the band forbade it.
+- Skipping the guards *alone* is dangerous (−22%), because the band then pulls the DP price to a level the guards were protecting; with the band gone too, the guards add nothing.
+- The DP monopoly price is the one switch that hurts: in one match (`Tody_Rank_33/LvrJkv`) it loses 10–12% on both sets. The choice model is fitted while the rival is present, and its no-rival extrapolation sets the price too high. The hand monopoly rule stays.
+- Median match +1.5%; sell-out rate rises from 26% to 30%, i.e. seats are sold at higher prices rather than left over.
+
+### 22.3 Caveats
+
+- The test bed generates demand from the same choice-model family the DP optimises, so these gains are upper estimates; the real gain is smaller. The hand guards are a safety net against a wrong model, and v6.5 removes it while the DP price is active. §22.4 checks a different demand family: smaller gain, no loss.
+- The match-level losses are small (worst −2.4%), and wins outnumber losses 44 to 2, which makes it unlikely the gain comes only from flattering the test bed.
+- Note for re-runs: `v64_testbed.py` reloads each pricing file per match, so `duopoly.py` must not be edited while it runs.
+
+### 22.4 Check on the simulator (different demand model)
+
+`analytics/benchmark_3regime_models.py` (5 seeds × 30 seasons) draws buyers with uniform willingness to pay, not from the choice model, so the DP's model is misspecified there. Mean revenue per season, summed over the 4 rivals:
+
+| Market (simulated) | v6.5 | v6.4 | Change |
+| :--- | :---: | :---: | :---: |
+| Low (~68 arrivals) | \$4,610 | \$4,617 | −0.2% (noise) |
+| Average (~95 arrivals) | \$9,020 | \$8,889 | +1.5% |
+| High (~135 arrivals) | \$10,728 | \$10,220 | +5.0% |
+
+No rival-market cell gets worse beyond its 95% interval. Gains come against the bounded rival and old v1.0 in the high market (+6%) and the aggressive dumper (+5.9%, high). In the low market market sizing already sets the price, so the DP rarely acts. The gain is much smaller than on the test bed (+10.9%), as expected when the model is wrong, but it does not turn negative.
+
+### 22.5 Files
+
+- `duopoly.py` v6.5 (DP block at the end of the file, docstring component 8).
+- `tests/test_v65_dp_seat_value.py` (6 tests: seat value positive and diminishing, policy on the grid, zero value after the last day, speed, DP active once fitted, off before).
+- `analytics/v64_testbed.py`, `analytics/experiments/duopoly_dp_mu.py`.
+
