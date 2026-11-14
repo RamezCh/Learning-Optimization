@@ -1,0 +1,45 @@
+{
+ "source": "analytics/experiments/simulator_v66_components.txt (benchmark_3regime_models.py, 5 seeds x 30 seasons, sum of mean revenue per season over 4 rivals)",
+ "rows": [
+  {
+   "market": "Low (~68 arrivals)",
+   "new": 4626,
+   "old": 4610,
+   "without_early": 4603,
+   "without_path": 4626,
+   "without_nlp": 4625,
+   "without_skip": 4626,
+   "change": 0.3470715835141025,
+   "change_without_early": -0.15184381778742262
+  },
+  {
+   "market": "Average (~95 arrivals)",
+   "new": 8940,
+   "old": 9020,
+   "without_early": 9019,
+   "without_path": 8937,
+   "without_nlp": 8950,
+   "without_skip": 8940,
+   "change": -0.8869179600886956,
+   "change_without_early": -0.011086474501109667
+  },
+  {
+   "market": "High (~135 arrivals)",
+   "new": 10665,
+   "old": 10728,
+   "without_early": 10727,
+   "without_path": 10680,
+   "without_nlp": 10672,
+   "without_skip": 10665,
+   "change": -0.5872483221476488,
+   "change_without_early": -0.009321401938855445
+  }
+ ],
+ "total_change": -0.521389276623696,
+ "worst_cell": "Old v1.0 rival, average market: $3,330 \u00b1 91 (v6.6) vs $3,439 \u00b1 41 (v6.5)",
+ "latency_new_ms": 1.14,
+ "latency_old_ms": 0.71,
+ "latency_new_max_ms": 35,
+ "latency_old_max_ms": 19,
+ "latency_note": "4 matches x 20 seasons on the test bed, 8,080 calls per version"
+}

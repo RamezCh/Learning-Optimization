@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.5).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.7).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -61,12 +61,52 @@ Architectural Overview:
    market-sizing / copier branches still apply. Switches DP_* at the end of the file;
    ALGORITHM_CHANGES.md section 22 has the on/off tests (+10.9% on the v6.4 test bed). Before the choice model
    is fitted (first season), the hand formula of component 5 is still used.
+9. Learning approach with linear and nonlinear optimisation (v6.6, from the data/v6.5 tournaments;
+   after Bertsimas & Perakis 2001 and the lecture "A learning approach to dynamic pricing"):
+   a. Rival price forecast (lecture step 3 + time series). At the end of every season:
+        profile[d] = median rival price on day d over the last 10 seasons,
+        phi        = share of today's gap to the profile that is still there tomorrow (AR(1)),
+        reaction   = (a, c, b) of rival_t = a + c*rival_{t-1} + b*our_{t-1}, fitted by least absolute
+                     deviations as a LINEAR PROGRAMME on the last 3 seasons; used only if its error is
+                     <= 70% of the error of "same price as yesterday".
+      Forecast for the rest of the season: rival[d] = profile[d] + phi^(d-t) * (rival now - profile[t]).
+   b. Dynamic programme on the forecast path. The DP of component 8 held the rival at its 5-day
+      average until day 100; it now uses the forecast path (market sizing, component 6, too).
+   c. Today's price as a NONLINEAR PROGRAMME (lecture step 4, with capacity):
+        max_p E[ p*min(D, s) + V(t+1, s - min(D, s)) ],  D ~ Poisson(rate(p, rival forecast for today))
+      solved every day with a bounded scalar solver; the DP table (rebuilt every 10 days) supplies V.
+   d. Demand data: a sold-out rival still posts a price. Those days are now left out of the demand
+      data; before, the demand models read the posted price as competition.
+   e. The choice model is first fitted on day 50 of season 1 (was day 100).
+   Switches at the end of the file (RIVAL_*, NLP_PRICE). Tested and NOT adopted (EVALUATION.md):
+   rival sell-out share inside the DP, the lecture's linear demand model fitted by LP,
+   several starting points for the choice-model fit, logging sold-out-rival days as "no rival"
+   instead of leaving them out, a $10 price floor.
+10. Monopoly days and copiers from the DP (v6.7, from the data/v6.6 tournaments):
+   a. Rival sold out: the DP with no rival (DP_MONOPOLY) prices the remaining seats, but its price may only
+      LOWER the hand-made monopoly price, never raise it. On days with a sold-out rival v6.6 priced a
+      median $9.30 above the oracle; the DP alone lost 20% in one match because the fitted willingness to
+      pay can be implausibly high (m = $447 there), which only matters once the rival is gone.
+   b. Copier: the price comes from a DP in which the rival's price equals ours (it copies us a day later),
+      while the fitted willingness-to-pay midpoint m is at most $150. Otherwise the season-to-season search
+      is used, now ranking held prices by whole-season revenue: it counted revenue per day held, and days
+      after selling out did not count, so selling out early at a low price looked as good as selling all
+      season at a higher one (v6.6 held ~$30 against a perfect copier; the oracle says ~$50).
+   c. The willingness-to-pay midpoint m of the choice model is bounded at $150 in the fit (LOGIT_M_MAX).
+      With the rival present, demand depends mostly on price DIFFERENCES, so the fit often drifts to an
+      m of $200-$450 ("price hardly matters"); that is harmless in a duopoly but fatal once the rival is
+      gone or parked at $100: v6.6 priced $100 for ~30 seasons in data/v6.4 match 446Pbr (m = $204 after
+      the day-50 fit). Reverting the day-50 fit to day 100 also fixed 446Pbr but cost 0.3 points on data/v6.6.
+   d. Today's price is solved against the rival's forecast PLUS its last 60 forecast errors (expected
+      revenue over these scenarios), not one point forecast.
+   Tested and NOT adopted (EVALUATION.md): a DP that averages demand over the rival's past season paths,
+   logging sold-out-rival days as "no rival" to pin down m, logging them with the posted price.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from scipy.optimize import minimize
+from scipy.optimize import linprog, minimize, minimize_scalar
 
 # -----------------------------------------------------------------------------
 # Domain Constants
@@ -105,6 +145,10 @@ LOGIT_PRIOR: Tuple[float, float, float, float] = (np.log(0.35), np.log(35.0), np
 LOGIT_PRIOR_WEIGHT: Tuple[float, float, float, float] = (1.0, 1.0, 5.0, 5.0)
 LOGIT_WINDOW: int = 3000
 LOGIT_REFIT_EVERY: int = 25            # in-season refit interval (days)
+LOGIT_MIN_OBS: int = 45                # days of own data before the choice model is fitted (v6.5: 80,
+                                       # i.e. not before day 100 of season 1; since v6.6 day 50 of season 1)
+LOGIT_M_MAX: float = 150.0             # v6.7: bound on the willingness-to-pay midpoint m in the fit ($), see
+                                       # docstring 10c. The course model's highest willingness to pay is $150.
 # Zero sales at high prices cannot tell "few buyers" from "buyers won't pay this much", and only
 # the second lowers the best price. So after 7 days without a sale, cut $1 per extra dry day:
 # sales at lower prices then teach the model where the buyers are.
@@ -194,6 +238,8 @@ def p(
             demand_historical_in_current_season,
             state
         )
+
+    _record_rival_capacity(period, competitor_has_capacity_current_period_in_current_season, state)
 
     # 3. Inventory & Capacity Status
     units_sold = _calculate_units_sold(demand_historical_in_current_season)
@@ -300,6 +346,10 @@ def _initialize_or_get_state(
         "copier_rev": 0.0,                 # v6.4: revenue earned this season while holding
         "copier_days": 0,                  # v6.4: days held this season
         "dry_days": 0,                     # v6.4: days in a row without a sale (this season)
+        "rival_cap_days": [],              # v6.6: rival had capacity on day 1..t of this season
+        "rival_paths": [],                 # v6.6: rival price per day of the last seasons (nan = not selling)
+        "own_paths": [],                   # v6.6: our price per day of the same seasons
+        "rival_model": None,               # v6.6: fitted rival forecast (profile, phi, reaction, selling share)
     }
 
 
@@ -331,6 +381,7 @@ def _handle_season_transition(
     state["low_demand_obs"] = 0
     state["low_demand_in_season"] = False
     state["dry_days"] = 0
+    state["rival_cap_days"] = []
 
 
 def _handle_end_of_season(
@@ -370,7 +421,11 @@ def _handle_end_of_season(
             state.setdefault("target_c_obs", []).append(season_bend)
 
     _fit_logit_demand(state)
+    if COPIER_SEASON_REVENUE and state.get("copier_days", 0) > 0:
+        _copier_revenue_from_season(prices_history, demand_history, state)
     _update_copier_hold(state)
+    _store_rival_path(prices_history, state)
+    _fit_rival_model(state)
 
     _classify_and_update_regime(state)
     _fit_online_regression(state)
@@ -530,6 +585,13 @@ def _update_real_time_signals(
         if len(recent_prices) > 15:
             recent_prices.pop(0)
 
+        # v6.7: error of yesterday's rival forecast (only days on which the rival was selling)
+        fc = state.get("rival_fc")
+        if fc and fc[0] == period - 1 and _rival_was_selling(period - 1, state):
+            errors = state.setdefault("rival_fc_errors", [])
+            errors.append(float(latest_rival_price - fc[1]))
+            del errors[:-RIVAL_ERR_WINDOW]
+
         # Update EMA
         smoothing = 0.25
         current_ema = state.get("rival_ema_price", DEFAULT_NEUTRAL_PRICE)
@@ -545,9 +607,13 @@ def _update_real_time_signals(
         # (observation belongs to the previous period, period - 1)
         price_diff = latest_rival_price - my_prev_price
         norm_t = (period - 2) / float(TOTAL_SELLING_PERIODS - 1)
-        state.setdefault("training_history", []).append([
-            my_prev_price, price_diff, norm_t, last_demand
-        ])
+        # v6.6: a sold-out rival still posts a price ($0.10 to $999 in data/v6.5). On such a day we
+        # were alone in the market, so its posted price is not competition: the day is left out of
+        # the demand data. (Up to v6.5 it was logged as an ordinary duopoly day.)
+        if not (SKIP_SOLD_OUT_RIVAL_DAYS and not _rival_was_selling(period - 1, state)):
+            state.setdefault("training_history", []).append([
+                my_prev_price, price_diff, norm_t, last_demand
+            ])
 
         # v6.4 copier check: does the rival's price equal our price the day before?
         # Only days on which we changed our price are informative (two flat prices match trivially).
@@ -671,10 +737,9 @@ def _calculate_monopoly_price(
     Bands come from observed monopoly conversion (data/v4, data/v5): revenue per period
     peaks around $45-$55 and conversion collapses above ~$70 when WTP is truncated.
     """
-    if DP_MONOPOLY:
-        dp = _dp_monopoly_price(state.get("period_now", 1), remaining_capacity, state)
-        if dp is not None:
-            return dp
+    dp = _dp_monopoly_price(state.get("period_now", 1), remaining_capacity, state) if DP_MONOPOLY else None
+    if dp is not None and not MONOPOLY_DP_CAP:
+        return dp
     regime = state.get("detected_regime", "average_demand")
     preset = REGIME_PRESETS_MLR.get(regime, REGIME_PRESETS_MLR["average_demand"])
     p_low, p_high = preset["monopoly_band"]
@@ -684,7 +749,9 @@ def _calculate_monopoly_price(
         p_high = min(p_high, 60.0)
 
     pressure = float(np.clip((required_burn_rate - 0.30) / 0.90, 0.0, 1.0))
-    return float(p_high - pressure * (p_high - p_low))
+    hand = float(p_high - pressure * (p_high - p_low))
+    # v6.7: the DP may lower the monopoly price, never raise it (see docstring component 10a).
+    return min(hand, dp) if dp is not None else hand
 
 
 # -----------------------------------------------------------------------------
@@ -796,6 +863,8 @@ def _capacity_is_slack(period: int, remaining_capacity: int, state: Dict[str, An
         return False
     theta = state["logit_theta"]
     rival = state.get("rival_last_price", DEFAULT_RIVAL_PRICE)
+    if RIVAL_PATH_IN_SIZING:
+        rival = _forecast_rival_path(period, state)[0][period:TOTAL_SELLING_PERIODS + 1][None, :]
     taus = (np.arange(period, TOTAL_SELLING_PERIODS + 1) - 1) / float(TOTAL_SELLING_PERIODS - 1)
     grid = np.arange(UNCONSTRAINED_FLOOR, MAX_PRICE + 0.01, 1.0)
     rates = _logit_rate(theta, grid[:, None], rival, taus[None, :])
@@ -820,9 +889,10 @@ def _logit_rate(theta: List[float], price, rival, tau):
 
 
 def _fit_logit_demand(state: Dict[str, Any]) -> None:
-    """v6.4: Poisson maximum likelihood fit of the choice model on our own sales history."""
+    """v6.4: Poisson maximum likelihood fit of the choice model on our own sales history.
+    v6.6: days on which the rival was sold out are not in the history (see _update_real_time_signals)."""
     history = state.get("training_history", [])
-    if len(history) < MIN_OBSERVATIONS_FOR_TRAINING:
+    if len(history) < LOGIT_MIN_OBS:
         return
     try:
         data = np.array(history[-LOGIT_WINDOW:], dtype=float)
@@ -832,7 +902,8 @@ def _fit_logit_demand(state: Dict[str, Any]) -> None:
 
         def neg_log_lik(theta):
             lam = _logit_rate(theta, price, rival, tau) + 1e-12
-            return float(-(sold * np.log(lam) - lam).sum() + (weight * (theta - prior) ** 2).sum())
+            over = max(0.0, theta[1] - np.log(LOGIT_M_MAX))         # v6.7: m <= $150
+            return float(-(sold * np.log(lam) - lam).sum() + (weight * (theta - prior) ** 2).sum() + 1e4 * over ** 2)
 
         start = np.array(state.get("logit_theta", LOGIT_PRIOR), dtype=float)
         result = minimize(neg_log_lik, start, method="Nelder-Mead",
@@ -842,6 +913,21 @@ def _fit_logit_demand(state: Dict[str, Any]) -> None:
             state["logit_fitted"] = True
     except Exception:
         pass
+
+
+def _copier_revenue_from_season(prices_history, demand_history, state: Dict[str, Any]) -> None:
+    """
+    v6.7: the copier search measured revenue per day held, but days after selling out were never counted
+    (p() returns before logging them), so a low price that sells out early looked as good as a higher
+    price that sells all season. Use the whole season's revenue instead: rate = season revenue / 100 days.
+    """
+    if not (isinstance(prices_history, np.ndarray) and prices_history.ndim == 2) or demand_history is None:
+        return
+    own = np.asarray(prices_history[0, :TOTAL_SELLING_PERIODS], dtype=float)
+    sold = np.asarray(demand_history, dtype=float)[:TOTAL_SELLING_PERIODS]
+    n = min(len(own), len(sold))
+    season_rev = float(np.dot(np.where(own[:n] < TERMINAL_SOLDOUT_PRICE - 1.0, own[:n], 0.0), sold[:n]))
+    state["copier_rev"] = season_rev * state["copier_days"] / float(TOTAL_SELLING_PERIODS)
 
 
 def _update_copier_hold(state: Dict[str, Any]) -> None:
@@ -875,6 +961,8 @@ def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[st
     tau = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
     grid = np.arange(UNCONSTRAINED_FLOOR, MAX_PRICE + 0.01, 0.5)
     if _rival_is_copier(state):
+        if COPIER_DP and state.get("logit_fitted", False) and np.exp(state["logit_theta"][1]) <= COPIER_DP_MAX_M:
+            return float(np.clip(_dp_copier_price(period, state), *COPIER_PRICE_RANGE))
         hold = state.get("copier_hold")
         if hold is None:
             # First season against a copier: start from the choice model's best common price.
@@ -884,8 +972,16 @@ def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[st
                     "direction": -1.0, "step": COPIER_FIRST_STEP}
             state["copier_hold"] = hold
         return float(hold["price"])
-    revenue = grid * _logit_rate(theta, grid, rival_price, tau)
+    rival_price = _rival_today(state, rival_price, period)
+    revenue = grid * np.mean(_logit_rate(theta, grid[:, None], np.atleast_1d(rival_price)[None, :], tau), axis=1)
     price = float(grid[int(np.argmax(revenue))])
+    if NLP_PRICE:
+        # Lecture step 4: one-dimensional revenue maximisation with a standard solver.
+        res = minimize_scalar(lambda q: -q * float(np.mean(_logit_rate(theta, q, rival_price, tau))),
+                              bounds=(max(UNCONSTRAINED_FLOOR, price - 0.5), min(MAX_PRICE, price + 0.5)),
+                              method="bounded", options={"xatol": 0.02})
+        if np.isfinite(res.x):
+            price = round(float(res.x), 1)
     dry_cut = DRY_DAY_CUT * max(0, state.get("dry_days", 0) - DRY_DAYS_ALLOWED)
     return max(UNCONSTRAINED_FLOOR, price - dry_cut)
 
@@ -1018,29 +1114,58 @@ DP_REFRESH_DAYS = 10
 DP_BAND = False            # True: clip the DP price to [rival - undercut, rival + 12]
 DP_SKIP_GUARDS = True      # True: skip guards 1-2 when the DP price is active
 DP_SKIP_CLEARANCE = True   # True: skip the late-season clearance when the DP price is active
-DP_MONOPOLY = False        # True: DP price (no rival) when the rival is sold out
+DP_MONOPOLY = True         # v6.7: DP price (no rival) when the rival is sold out ...
+MONOPOLY_DP_CAP = True     # ... capped at the hand-made monopoly price (v6.5 tested it uncapped: rejected)
 
 
-def _dp_values(theta, rival, start_day):
-    """V[t][s] = expected revenue from day t to 100 with s seats, pricing optimally each day
-    (rival held at `rival`). Demand per day ~ Poisson(choice-model rate), capped at seats left."""
+def _dp_values(theta, rival, start_day, selling_share=None, copier=False):
+    """V[t][s] = expected revenue from day t to 100 with s seats, pricing optimally each day.
+    Demand per day ~ Poisson(choice-model rate), capped at seats left.
+    rival: one price held for all days, or an array indexed by day (the forecast rival path).
+    copier: the rival's price equals ours (v6.7, copying rival).
+    selling_share: optional array indexed by day, P(rival still sells on that day); on the other
+    days we are alone in the market."""
     fact = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880], dtype=float)[:DP_KMAX + 1]
     S = DEFAULT_TOTAL_CAPACITY
     seats = np.arange(S + 1)
     k = np.arange(DP_KMAX + 1)
     sold = np.minimum(k[None, :], seats[:, None])            # (S+1, K+1)
     idx = seats[:, None] - sold
+    rival_by_day = np.broadcast_to(np.asarray(rival, dtype=float), (TOTAL_SELLING_PERIODS + 2,)) \
+        if np.ndim(rival) == 0 else np.asarray(rival, dtype=float)
     V = np.zeros((TOTAL_SELLING_PERIODS + 2, S + 1))
     POL = np.zeros((TOTAL_SELLING_PERIODS + 2, S + 1))
     for t in range(TOTAL_SELLING_PERIODS, start_day - 1, -1):
-        lam = _logit_rate(theta, DP_PRICE_GRID, rival, (t - 1) / float(TOTAL_SELLING_PERIODS - 1))
-        pmf = np.exp(-lam)[:, None] * lam[:, None] ** k[None, :] / fact[None, :]
-        pmf[:, -1] = 1.0 - pmf[:, :-1].sum(axis=1)          # lump the tail into K
+        tau = (t - 1) / float(TOTAL_SELLING_PERIODS - 1)
+        rival_today = DP_PRICE_GRID if copier else rival_by_day[t]
+        pmf = _poisson_pmf(_logit_rate(theta, DP_PRICE_GRID, rival_today, tau), k, fact)
+        if selling_share is not None and selling_share[t] < 0.999:
+            alone = _poisson_pmf(_logit_rate(theta, DP_PRICE_GRID, 1000.0, tau), k, fact)
+            pmf = selling_share[t] * pmf + (1.0 - selling_share[t]) * alone
         exp_sold = pmf @ sold.T                               # (P, S+1)
         cont = pmf @ V[t + 1][idx].T                          # (P, S+1)
         tot = DP_PRICE_GRID[:, None] * exp_sold + cont
         V[t] = tot.max(axis=0); POL[t] = DP_PRICE_GRID[tot.argmax(axis=0)]
     return V, POL
+
+
+def _poisson_pmf(lam, k, fact):
+    """P(D = k) for k = 0..K with the tail lumped into K. lam: array of rates (one per price)."""
+    lam = np.atleast_1d(np.asarray(lam, dtype=float))
+    pmf = np.exp(-lam)[:, None] * lam[:, None] ** k[None, :] / fact[None, :]
+    pmf[:, -1] = np.maximum(0.0, 1.0 - pmf[:, :-1].sum(axis=1))
+    return pmf
+
+
+def _dp_copier_price(period, state):
+    """v6.7 copier: DP price with the rival's price equal to ours (it copies us one day later)."""
+    seats = int(state.get("seats_left_now", 0))
+    cache = state.get("dp_copier_cache")
+    if cache is None or cache["theta"] != state["logit_theta"]:
+        _, POL = _dp_values(np.array(state["logit_theta"]), 0.0, 1, copier=True)
+        cache = {"theta": list(state["logit_theta"]), "POL": POL}
+        state["dp_copier_cache"] = cache
+    return float(cache["POL"][min(max(period, 1), TOTAL_SELLING_PERIODS)][max(seats, 1)])
 
 
 def _dp_monopoly_price(period, seats_left, state):
@@ -1056,18 +1181,238 @@ def _dp_monopoly_price(period, seats_left, state):
 
 
 def _dp_seat_value(period, seats_left, rival_price, state):
-    """mu = value of keeping one more seat after today: V[t+1][s] - V[t+1][s-1]."""
+    """mu = value of keeping one more seat after today: V[t+1][s] - V[t+1][s-1].
+    Also sets state["dp_price"], today's price."""
     if not state.get("logit_fitted", False) or seats_left <= 0:
         return None
     cache = state.get("dp_cache")
     stale = (cache is None or cache["season"] != state.get("last_season_seen") or period - cache["day"] >= DP_REFRESH_DAYS
              or cache["theta"] != state["logit_theta"])
     if stale:
-        recent = state.get("rival_recent_prices", [])
-        rival = float(np.mean(recent[-5:])) if recent else float(rival_price)
-        V, POL = _dp_values(np.array(state["logit_theta"]), rival, period)
+        if RIVAL_PATH_IN_DP:
+            rival, share = _forecast_rival_path(period, state)
+            if not RIVAL_SELLOUT_IN_DP:
+                share = None
+        else:
+            recent = state.get("rival_recent_prices", [])
+            rival, share = (float(np.mean(recent[-5:])) if recent else float(rival_price)), None
+        V, POL = _dp_values(np.array(state["logit_theta"]), rival, period, share)
         cache = {"season": state.get("last_season_seen"), "day": period, "theta": list(state["logit_theta"]), "V": V, "POL": POL}
         state["dp_cache"] = cache
     V = cache["V"]
     state["dp_price"] = float(cache["POL"][period][seats_left])
+    if NLP_PRICE:
+        today = _rival_today(state, rival_price, period)
+        state["dp_price"] = _solve_price_today(period, seats_left, today, V[period + 1], state)
     return float(V[period + 1][seats_left] - V[period + 1][seats_left - 1])
+
+
+def _solve_price_today(period, seats_left, rival_today, value_tomorrow, state):
+    """
+    Lecture step 4 with capacity: today's price as a one-dimensional nonlinear programme
+        max_p  E[ p * min(D, s) + V(t+1, s - min(D, s)) ],   D ~ Poisson(rate(p, rival today))
+    The $1 grid finds the right hill, a bounded scalar solver then finds its top. Unlike the cached
+    DP policy (rebuilt every DP_REFRESH_DAYS days) this uses today's forecast of the rival price.
+    v6.7: rival_today may be several scenarios (forecast + recent forecast errors); the expectation is
+    then also taken over them.
+    """
+    theta = state["logit_theta"]
+    tau = (period - 1) / float(TOTAL_SELLING_PERIODS - 1)
+    fact = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880], dtype=float)[:DP_KMAX + 1]
+    k = np.arange(DP_KMAX + 1)
+    sold = np.minimum(k, seats_left)
+    future = value_tomorrow[seats_left - sold]
+
+    rivals = np.atleast_1d(np.asarray(rival_today, dtype=float))     # one or more rival scenarios for today
+
+    def pmf_of(prices):
+        prices = np.atleast_1d(prices)
+        lam = _logit_rate(theta, prices[:, None], rivals[None, :], tau).ravel()
+        return _poisson_pmf(lam, k, fact).reshape(len(prices), len(rivals), -1).mean(axis=1)
+
+    def value(price):
+        return float(pmf_of(price)[0] @ (price * sold + future))
+
+    on_grid = np.einsum("pk,pk->p", pmf_of(DP_PRICE_GRID), DP_PRICE_GRID[:, None] * sold[None, :] + future[None, :])
+    start = float(DP_PRICE_GRID[int(np.argmax(on_grid))])
+    try:
+        res = minimize_scalar(lambda q: -value(float(q)), method="bounded", options={"xatol": 0.02},
+                              bounds=(max(DP_PRICE_GRID[0], start - 1.0), min(DP_PRICE_GRID[-1], start + 1.0)))
+        if np.isfinite(res.x) and -res.fun >= on_grid.max() - 1e-9:
+            return round(float(res.x), 1)
+    except Exception:
+        pass
+    return start
+
+
+# -----------------------------------------------------------------------------
+# v6.6: rival price forecast (time series + linear programme), after Bertsimas & Perakis (2001)
+# -----------------------------------------------------------------------------
+RIVAL_PATH_SEASONS = 10        # seasons of rival prices kept for the per-day profile
+RIVAL_MIN_SEASONS = 2          # seasons needed before the forecast replaces the 5-day average
+RIVAL_REACT_SEASONS = 3        # seasons used to fit the one-day-ahead reaction model
+RIVAL_REACT_MAX_RATIO = 0.7    # reaction model is used only if its error is <= 70% of "yesterday's price"
+RIVAL_PATH_IN_DP = True        # DP uses the forecast rival path instead of one held price
+RIVAL_SELLOUT_IN_DP = False    # DP also uses the share of seasons the rival was still selling
+RIVAL_PATH_IN_SIZING = True    # market sizing uses the forecast path
+RIVAL_REACTION_TODAY = True    # today's rival price from the reaction model (else yesterday's)
+NLP_PRICE = True               # today's price from a scalar solver on today's forecast
+SKIP_SOLD_OUT_RIVAL_DAYS = True  # days on which the rival was sold out are left out of the demand data
+COPIER_SEASON_REVENUE = True   # v6.7: copier search ranks held prices by whole-season revenue
+COPIER_DP = True               # v6.7: copier price from the DP with rival price = our price ...
+COPIER_DP_MAX_M = 150.0        # ... while the fitted willingness-to-pay midpoint m <= $150 (else the search)
+RIVAL_UNCERTAINTY_TODAY = True # v6.7: today's price maximises revenue averaged over the rival's recent forecast errors
+RIVAL_ERR_WINDOW = 60          # forecast errors kept (days)
+RIVAL_ERR_MIN = 20             # errors needed before they are used
+
+
+def _rival_was_selling(day, state):
+    """True if the rival had capacity on that day of this season (unknown days count as selling)."""
+    days = state.get("rival_cap_days", [])
+    return bool(days[day - 1]) if 1 <= day <= len(days) else True
+
+
+def _record_rival_capacity(period, has_capacity, state):
+    """Remembers for every day of this season whether the rival was selling."""
+    if period > TOTAL_SELLING_PERIODS:
+        return
+    days = state.setdefault("rival_cap_days", [])
+    if period == 1:
+        del days[:]
+    while len(days) < period - 1:
+        days.append(True)
+    if len(days) == period - 1:
+        days.append(bool(has_capacity))
+
+
+def _store_rival_path(prices_history, state):
+    """End of season: keep the rival's and our price per day (nan where the rival was not selling)."""
+    if not (isinstance(prices_history, np.ndarray) and prices_history.ndim == 2
+            and prices_history.shape[0] >= 2 and prices_history.shape[1] >= TOTAL_SELLING_PERIODS):
+        return
+    own = np.asarray(prices_history[0, :TOTAL_SELLING_PERIODS], dtype=float)
+    rival = np.asarray(prices_history[1, :TOTAL_SELLING_PERIODS], dtype=float)
+    days = list(state.get("rival_cap_days", []))[:TOTAL_SELLING_PERIODS]
+    days += [True] * (TOTAL_SELLING_PERIODS - len(days))
+    selling = np.array(days, dtype=bool) & (rival > 0.0) & (rival < SERVER_SOLDOUT_PRICE_THRESHOLD)
+    state.setdefault("rival_paths", []).append(np.where(selling, rival, np.nan).tolist())
+    state.setdefault("own_paths", []).append(own.tolist())
+    del state["rival_paths"][:-RIVAL_PATH_SEASONS]
+    del state["own_paths"][:-RIVAL_PATH_SEASONS]
+
+
+def _least_absolute_fit(X, y, bounds):
+    """
+    min sum |y - X b|  as a linear programme (lecture step 1 / 3):
+        min sum(D)   s.t.   y - X b <= D,   -(y - X b) <= D,   D >= 0
+    """
+    n, m = X.shape
+    cost = np.r_[np.zeros(m), np.ones(n)]
+    A = np.block([[-X, -np.eye(n)], [X, -np.eye(n)]])
+    res = linprog(cost, A_ub=A, b_ub=np.r_[-y, y], bounds=list(bounds) + [(0, None)] * n, method="highs")
+    return res.x[:m] if res.status == 0 else None
+
+
+def _fit_rival_model(state):
+    """
+    Fits the rival forecast on the stored seasons of this match:
+    1. profile[d]  = median rival price on day d (the least-absolute-deviation level per day),
+    2. phi         = how much of today's gap to the profile is still there tomorrow (AR(1), in [0, 1]),
+    3. share[d]    = share of seasons in which the rival was still selling on day d,
+    4. reaction    = (a, c, b) of  rival_t = a + c * rival_{t-1} + b * our_{t-1}, least absolute
+                     deviations by linear programming on the last 3 seasons (c, b >= 0).
+    """
+    paths = np.array(state.get("rival_paths", []), dtype=float)
+    if paths.ndim != 2 or paths.shape[0] < RIVAL_MIN_SEASONS:
+        return
+    try:
+        seen = np.isfinite(paths)
+        share = seen.mean(axis=0)
+        days = np.arange(paths.shape[1])
+        has = seen.any(axis=0)
+        if has.sum() < 10:
+            return
+        med = np.array([np.median(paths[seen[:, d], d]) if has[d] else np.nan for d in days])
+        profile = np.interp(days, days[has], med[has])
+        gap = paths - profile[None, :]
+        x, y = gap[:, :-1].ravel(), gap[:, 1:].ravel()
+        ok = np.isfinite(x) & np.isfinite(y)
+        phi = float(np.clip((x[ok] * y[ok]).sum() / max(1e-9, (x[ok] ** 2).sum()), 0.0, 1.0)) if ok.sum() > 20 else 0.0
+
+        reaction = None
+        own = np.array(state.get("own_paths", []), dtype=float)[-RIVAL_REACT_SEASONS:]
+        riv = paths[-RIVAL_REACT_SEASONS:]
+        r_now, r_prev, p_prev = riv[:, 1:].ravel(), riv[:, :-1].ravel(), own[:, :-1].ravel()
+        ok = np.isfinite(r_now) & np.isfinite(r_prev) & (p_prev < TERMINAL_SOLDOUT_PRICE - 1.0)
+        if ok.sum() >= 60:
+            X = np.c_[np.ones(ok.sum()), r_prev[ok], p_prev[ok]]
+            coef = _least_absolute_fit(X, r_now[ok], [(None, None), (0.0, 1.5), (0.0, 1.5)])
+            if coef is not None and np.all(np.isfinite(coef)):
+                # Keep it only if it clearly beats "same price as yesterday" on these seasons.
+                miss_model = np.abs(r_now[ok] - X @ coef).mean()
+                miss_naive = np.abs(r_now[ok] - r_prev[ok]).mean()
+                if miss_model <= RIVAL_REACT_MAX_RATIO * miss_naive:
+                    reaction = [float(v) for v in coef]
+        lo, hi = float(np.nanmin(paths)), float(np.nanmax(paths))
+        state["rival_model"] = {"profile": profile.tolist(), "phi": phi, "share": share.tolist(),
+                                "reaction": reaction, "range": [lo, hi]}
+    except Exception:
+        pass
+
+
+def _rival_today(state, fallback, period):
+    """
+    Rival price(s) for today's price decision. v6.6: one forecast (reaction model or yesterday's price).
+    v6.7: the forecast plus each of the last 60 forecast errors, so that today's price maximises expected
+    revenue over what the rival may really charge. Against an unpredictable rival a single guess is often
+    far off (data/v6.4 LvrJkv: a rival at a random $5-$87 every day); against a predictable one the errors
+    are ~0 and nothing changes.
+    """
+    today = _forecast_rival_today(state, fallback) if RIVAL_REACTION_TODAY else float(fallback)
+    if not RIVAL_UNCERTAINTY_TODAY:
+        return today
+    state["rival_fc"] = [int(period), float(today)]
+    errors = state.get("rival_fc_errors", [])
+    if len(errors) < RIVAL_ERR_MIN:
+        return today
+    return np.clip(today + np.asarray(errors[-RIVAL_ERR_WINDOW:], dtype=float), 0.1, SERVER_SOLDOUT_PRICE_THRESHOLD - 1.0)
+
+
+def _forecast_rival_today(state, fallback):
+    """Rival price today: reaction model on yesterday's two prices; else yesterday's rival price."""
+    model = state.get("rival_model")
+    if not model or not model.get("reaction"):
+        return float(fallback)
+    a, c, b = model["reaction"]
+    guess = a + c * state.get("rival_last_price", fallback) + b * state.get("my_last_price", fallback)
+    lo, hi = model["range"]
+    return float(np.clip(guess, lo, hi))
+
+
+def _forecast_rival_path(period, state):
+    """
+    Forecast of the rival's price for every day (array indexed by day 1..100; entries before
+    `period` are unused) and the share of seasons the rival was still selling, given it sells today.
+        rival[d] = profile[d] + phi^(d - t) * (rival today - profile[t])
+    Before RIVAL_MIN_SEASONS seasons are stored: the 5-day average held flat (as in v6.5).
+    """
+    T = TOTAL_SELLING_PERIODS
+    recent = state.get("rival_recent_prices", [])
+    last = float(state.get("rival_last_price", DEFAULT_RIVAL_PRICE))
+    model = state.get("rival_model")
+    path = np.full(T + 2, float(np.mean(recent[-5:])) if recent else last)
+    share = np.ones(T + 2)
+    if not model:
+        return path, share
+    profile = np.r_[np.nan, model["profile"], model["profile"][-1]]      # index = day
+    today = last if (recent and period > 1) else float(profile[min(max(period, 1), T)])
+    days = np.arange(T + 2)
+    ahead = np.maximum(0, days - period)
+    here = min(max(period - 1, 1), T) if (recent and period > 1) else min(max(period, 1), T)
+    path = profile + model["phi"] ** np.maximum(1, days - here) * (today - profile[here])
+    path[0] = path[1]
+    path = np.clip(path, 0.1, SERVER_SOLDOUT_PRICE_THRESHOLD - 1.0)
+    sell = np.r_[1.0, model["share"], model["share"][-1]]
+    base = max(sell[min(max(period, 1), T)], 1e-6)
+    share = np.where(ahead > 0, np.clip(sell / base, 0.0, 1.0), 1.0)
+    return path, share

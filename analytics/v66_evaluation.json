@@ -1,0 +1,427 @@
+{
+ "online": {
+  "overall": {
+   "matches": 90,
+   "rev_mean": 1948.0539222222224,
+   "rev_median": 1742.846,
+   "seats": 49.48155555555556,
+   "sellout": 0.2783333333333333,
+   "rival_sellout": 0.2548888888888889,
+   "matches_below_500": 26,
+   "revenue_share_below_500": 0.02606490136341366,
+   "matches_at_floor": 30,
+   "corr_rev_rival_price": 0.8753370162873874,
+   "corr_our_rival_price": 0.8829429867039066
+  },
+  "by_tournament": {
+   "AirborneTody_rank_4": {
+    "rank": 4,
+    "matches": 30,
+    "rev_mean": 2021.4878333333334,
+    "rev_median": 2104.194,
+    "seats": 50.613333333333344,
+    "sellout": 0.24300000000000002,
+    "rival_sellout": 0.2556666666666667,
+    "our_median": 28.7,
+    "rival_median": 29.85
+   },
+   "DeftDalmatian_rank_8": {
+    "rank": 8,
+    "matches": 30,
+    "rev_mean": 1933.9148333333335,
+    "rev_median": 1538.4180000000001,
+    "seats": 51.00533333333332,
+    "sellout": 0.29600000000000004,
+    "rival_sellout": 0.22966666666666669,
+    "our_median": 26.45,
+    "rival_median": 27.75
+   },
+   "ProficientCivet_rank_9": {
+    "rank": 9,
+    "matches": 30,
+    "rev_mean": 1888.7590999999998,
+    "rev_median": 1811.2395,
+    "seats": 46.82599999999999,
+    "sellout": 0.296,
+    "rival_sellout": 0.2793333333333334,
+    "our_median": 29.15,
+    "rival_median": 30.65
+   }
+  },
+  "by_type": {
+   "dumper": {
+    "matches": 21,
+    "share_matches": 0.23333333333333334,
+    "rev_mean": 181.28652380952383,
+    "rev_median": 146.885,
+    "share_revenue": 0.021714074957758556,
+    "seats": 8.903333333333332,
+    "sellout": 0.0,
+    "our_median": 18.0,
+    "rival_median": 11.0,
+    "at_floor": 0.9364952380952383,
+    "rival_sellout": 0.030476190476190476
+   },
+   "copier": {
+    "matches": 12,
+    "share_matches": 0.13333333333333333,
+    "rev_mean": 1127.6999999999998,
+    "rev_median": 785.3309999999999,
+    "share_revenue": 0.07718472178043119,
+    "seats": 40.160833333333336,
+    "sellout": 0.11833333333333333,
+    "our_median": 22.7,
+    "rival_median": 22.95,
+    "at_floor": 0.42451666666666665,
+    "rival_sellout": 0.125
+   },
+   "seasonal": {
+    "matches": 12,
+    "share_matches": 0.13333333333333333,
+    "rev_mean": 2260.7004999999995,
+    "rev_median": 2518.6965,
+    "share_revenue": 0.1547322329709867,
+    "seats": 61.4675,
+    "sellout": 0.29916666666666664,
+    "our_median": 36.0,
+    "rival_median": 39.3,
+    "at_floor": 0.20204307665632626,
+    "rival_sellout": 0.14916666666666667
+   },
+   "steady": {
+    "matches": 15,
+    "share_matches": 0.16666666666666666,
+    "rev_mean": 2887.1584666666668,
+    "rev_median": 2911.066,
+    "share_revenue": 0.24701219626860318,
+    "seats": 67.10666666666665,
+    "sellout": 0.4153333333333333,
+    "our_median": 42.0,
+    "rival_median": 40.9,
+    "at_floor": 0.13901224954231647,
+    "rival_sellout": 0.4013333333333333
+   },
+   "erratic": {
+    "matches": 30,
+    "share_matches": 0.3333333333333333,
+    "rev_mean": 2918.321766666667,
+    "rev_median": 3036.4844999999996,
+    "share_revenue": 0.49935677402222034,
+    "seats": 68.00766666666667,
+    "sellout": 0.46033333333333337,
+    "our_median": 46.25,
+    "rival_median": 48.05,
+    "at_floor": 0.07174369720192608,
+    "rival_sellout": 0.433
+   }
+  }
+ },
+ "demand_models": {
+  "matches": 89,
+  "test_days": 421247,
+  "mean_sales_per_day": 0.48866104684425055,
+  "zero_days": 0.6579109168729985,
+  "ceiling_median": 0.07670452628508018,
+  "lad_day_all_zero_matches": 43,
+  "ols": {
+   "r2_median": 0.04746081297529092,
+   "adj_r2_median": 0.04688526059642406,
+   "r2_q25": 0.0143257133257082,
+   "r2_q75": 0.08766911662094501,
+   "block_r2_median": 0.20870798527082257,
+   "share_of_ceiling": 0.7157176215440479,
+   "abs_bias_median": 0.027932402450079552,
+   "best_in_matches": 17
+  },
+  "lad_day": {
+   "r2_median": -0.04518499773193407,
+   "adj_r2_median": -0.045812610821044375,
+   "r2_q25": -0.18134709788713632,
+   "r2_q75": 0.024560661772242254,
+   "block_r2_median": -0.42910269683479063,
+   "share_of_ceiling": -0.6894315013872105,
+   "abs_bias_median": 0.7454499110038937,
+   "best_in_matches": 1
+  },
+  "lad_block": {
+   "r2_median": 0.040390048948584,
+   "adj_r2_median": 0.03980764355648314,
+   "r2_q25": 0.002588059446322344,
+   "r2_q75": 0.08024692085112706,
+   "block_r2_median": 0.18263716915127326,
+   "share_of_ceiling": 0.5964791203217942,
+   "abs_bias_median": 0.07578558225508314,
+   "best_in_matches": 2
+  },
+  "choice": {
+   "r2_median": 0.06427427427746879,
+   "adj_r2_median": 0.06351336699897936,
+   "r2_q25": 0.022495105008716987,
+   "r2_q75": 0.128236719506284,
+   "block_r2_median": 0.2372416554976663,
+   "share_of_ceiling": 0.9825769311175623,
+   "abs_bias_median": 0.023634424494046957,
+   "best_in_matches": 69
+  }
+ },
+ "rival_forecast": {
+  "matches": 90,
+  "one_yesterday": {
+   "mean": 1.9200804648709278,
+   "median": 0.7023991597925354
+  },
+  "one_avg5": {
+   "mean": 2.605661006056264,
+   "median": 1.399389448817028
+  },
+  "one_reaction": {
+   "mean": 1.6361357991316465,
+   "median": 0.704071255094418
+  },
+  "many_flat": {
+   "mean": 7.689614507661265,
+   "median": 5.70628381239483
+  },
+  "many_path": {
+   "mean": 4.414435006356243,
+   "median": 3.0294843618374694
+  },
+  "path_better": 59,
+  "path_worse": 8,
+  "path_reduction": 0.425922456586337,
+  "reaction_reduction": 0.1478816491986802,
+  "reaction_gate_matches": 24,
+  "by_type": {
+   "copier": {
+    "flat": 3.2902545962771375,
+    "path": 1.9939624416433326,
+    "matches": 12
+   },
+   "dumper": {
+    "flat": 3.535433810763879,
+    "path": 2.35633721280423,
+    "matches": 21
+   },
+   "erratic": {
+    "flat": 12.367411548357461,
+    "path": 7.999675391354468,
+    "matches": 30
+   },
+   "seasonal": {
+    "flat": 11.603603731348377,
+    "path": 2.416722273843654,
+    "matches": 12
+   },
+   "steady": {
+    "flat": 4.53816995208282,
+    "path": 3.659839385113009,
+    "matches": 15
+   }
+  }
+ },
+ "causation": {
+  "matches": 89,
+  "raw_median": -0.0540994024142853,
+  "raw_positive": 16,
+  "partial_median": -0.14103945410232618,
+  "partial_negative": 86,
+  "slope_controlled_negative": 86,
+  "corr_price_tau_median": -0.03130706959590461,
+  "corr_demand_tau_median": 0.09991264913451829,
+  "they_follow_median": 0.6171017729927833,
+  "we_follow_median": 0.5464251954740994,
+  "both_follow_above_half": 44,
+  "copiers": 12,
+  "positive_given_day_only": 15,
+  "positive_given_rival_only": 3,
+  "positive_given_both": 3,
+  "price_rival_median": 0.50619417873117,
+  "sales_rival_median": 0.051895573415323686,
+  "sales_rival_positive": 71,
+  "day_hypothesis_r": -0.2336761922167801,
+  "rival_hypothesis_r": 0.6664670239021006
+ },
+ "testbed": {
+  "validity": {
+   "matches": 90,
+   "actual_total": 17532485.299999997,
+   "replay_total": 17550522.356000002,
+   "total_error": 0.001028779188539053,
+   "r2_levels": 0.9894274958610901,
+   "pearson": 0.9947551091580503,
+   "median_abs_error": 0.0156574229054387,
+   "median_abs_error_big": 0.00974886954920795,
+   "within_10pct": 57,
+   "big_matches": 64,
+   "worst": 0.5761187537453188
+  },
+  "result": {
+   "matches": 90,
+   "old_total": 17550522.356000002,
+   "new_total": 18316759.983999997,
+   "change": 4.365896424376459,
+   "ci95": [
+    2.4584369070036227,
+    6.848797571634098
+   ],
+   "better": 56,
+   "worse": 1,
+   "unchanged": 33,
+   "median_match": 0.9304854024216103,
+   "worst_match": -2.806135642492913,
+   "best_match": 807.1606166086523,
+   "old_per_season": 1950.0580395555558,
+   "new_per_season": 2035.1955537777776,
+   "sellout_old": 0.29688888888888887,
+   "sellout_new": 0.32666666666666666,
+   "robust": {
+    "top5_share_of_gain": 0.5373762615583793,
+    "top1_share_of_gain": 0.17464126546393,
+    "top1_match": "43gtYC",
+    "top1_testbed_error": -0.5761187537453188,
+    "change_without_top5": 2.1586356528071837,
+    "trusted_matches": 57,
+    "trusted_change": 2.9695397529902356,
+    "trusted_ci95": [
+     1.6156646440437887,
+     4.6150563315905675
+    ],
+    "trusted_better": 38,
+    "trusted_worse": 1,
+    "trusted_median": 0.9297995502972833
+   },
+   "by_type": {
+    "dumper": {
+     "matches": 21,
+     "change": 0.7011476915248283,
+     "dollars_per_season": 1.2638695238095463
+    },
+    "copier": {
+     "matches": 12,
+     "change": 10.912905437574484,
+     "dollars_per_season": 126.04110750000012
+    },
+    "seasonal": {
+     "matches": 12,
+     "change": 4.74586809602775,
+     "dollars_per_season": 107.86782666666628
+    },
+    "steady": {
+     "matches": 15,
+     "change": 1.8580624076238506,
+     "dollars_per_season": 54.48328333333321
+    },
+    "erratic": {
+     "matches": 30,
+     "change": 4.632334993345721,
+     "dollars_per_season": 133.72261866666625
+    }
+   }
+  },
+  "ablation": {
+   "matches": 60,
+   "files": {
+    "duopoly.py": {
+     "change": 4.239589883392236,
+     "ci95": [
+      2.1877685066998636,
+      6.8233780756624025
+     ],
+     "better": 40,
+     "worse": 3,
+     "worst_match": -0.8119841820069751
+    },
+    "only_path.py": {
+     "change": 1.962622396967606,
+     "ci95": [
+      0.38006938248773825,
+      4.115398914012372
+     ],
+     "better": 14,
+     "worse": 1,
+     "worst_match": -3.4713009287199115
+    },
+    "only_nlp.py": {
+     "change": 0.7016950076325967,
+     "ci95": [
+      0.10717416633547361,
+      1.5994943139206044
+     ],
+     "better": 10,
+     "worse": 3,
+     "worst_match": -3.673849551289865
+    },
+    "only_early.py": {
+     "change": 1.4064457864420898,
+     "ci95": [
+      0.3557029765627768,
+      3.0569509448175225
+     ],
+     "better": 23,
+     "worse": 2,
+     "worst_match": -1.2112118653326398
+    },
+    "only_skip.py": {
+     "change": 0.23911673950050005,
+     "ci95": [
+      -0.4308671709842065,
+      0.8901471974153176
+     ],
+     "better": 6,
+     "worse": 3,
+     "worst_match": -6.3245281785966885
+    },
+    "without_path.py": {
+     "change": 2.887841882743425,
+     "ci95": [
+      1.4723435014245116,
+      4.825632391269772
+     ],
+     "better": 39,
+     "worse": 4,
+     "worst_match": -2.241129522717733
+    },
+    "without_nlp.py": {
+     "change": 3.953166593063928,
+     "ci95": [
+      1.9336982943292014,
+      6.454562420079064
+     ],
+     "better": 39,
+     "worse": 4,
+     "worst_match": -2.3479446010030713
+    },
+    "without_early.py": {
+     "change": 2.484149320475071,
+     "ci95": [
+      0.8341123944411933,
+      4.668658420842555
+     ],
+     "better": 20,
+     "worse": 3,
+     "worst_match": -3.673849551289865
+    },
+    "without_skip.py": {
+     "change": 3.4627213656929,
+     "ci95": [
+      1.3806294355861166,
+      6.065507521911479
+     ],
+     "better": 35,
+     "worse": 6,
+     "worst_match": -4.268260097054166
+    },
+    "logged_as_no_rival.py": {
+     "change": 4.1416200979022655,
+     "ci95": [
+      2.1066159147852694,
+      6.732643061691579
+     ],
+     "better": 40,
+     "worse": 3,
+     "worst_match": -1.4734597283976192
+    }
+   }
+  }
+ }
+}

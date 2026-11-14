@@ -1,0 +1,979 @@
+{
+ "config": {
+  "data": "v6.6",
+  "prev_data": "v6.5",
+  "played": "v6.6",
+  "prev_played": "v6.5",
+  "current": "v6.7",
+  "previous": "v6.6",
+  "prefix": "v67",
+  "testbed_csv": "analytics/v67_testbed_v66data.csv",
+  "prev_testbed_csv": "analytics/v67_testbed_v65data.csv",
+  "ablation": [
+   "v6.7 without WTP bound",
+   "v6.7 without monopoly DP",
+   "v6.7 without copier DP",
+   "v6.7 without rival uncertainty",
+   "v6.7 alt: fit revert instead of bound"
+  ],
+  "v64_testbed_csv": "analytics/v67_testbed_v64file.csv"
+ },
+ "prev_online": {
+  "overall": {
+   "matches": 90,
+   "rev_mean": 1948.0539222222224,
+   "rev_median": 1742.846,
+   "seats": 49.48155555555556,
+   "sellout": 0.2783333333333333,
+   "rival_sellout": 0.2548888888888889,
+   "matches_below_500": 26,
+   "revenue_share_below_500": 0.02606490136341366,
+   "matches_at_floor": 30,
+   "corr_rev_rival_price": 0.8753370162873874,
+   "corr_our_rival_price": 0.8829429867039066
+  },
+  "by_tournament": {
+   "AirborneTody_rank_4": {
+    "rank": 4,
+    "matches": 30,
+    "rev_mean": 2021.4878333333334,
+    "rev_median": 2104.194,
+    "seats": 50.613333333333344,
+    "sellout": 0.24300000000000002,
+    "rival_sellout": 0.2556666666666667,
+    "our_median": 28.7,
+    "rival_median": 29.85
+   },
+   "DeftDalmatian_rank_8": {
+    "rank": 8,
+    "matches": 30,
+    "rev_mean": 1933.9148333333335,
+    "rev_median": 1538.4180000000001,
+    "seats": 51.00533333333332,
+    "sellout": 0.29600000000000004,
+    "rival_sellout": 0.22966666666666669,
+    "our_median": 26.45,
+    "rival_median": 27.75
+   },
+   "ProficientCivet_rank_9": {
+    "rank": 9,
+    "matches": 30,
+    "rev_mean": 1888.7590999999998,
+    "rev_median": 1811.2395,
+    "seats": 46.82599999999999,
+    "sellout": 0.296,
+    "rival_sellout": 0.2793333333333334,
+    "our_median": 29.15,
+    "rival_median": 30.65
+   }
+  },
+  "by_type": {
+   "dumper": {
+    "matches": 21,
+    "share_matches": 0.23333333333333334,
+    "rev_mean": 181.28652380952383,
+    "rev_median": 146.885,
+    "share_revenue": 0.021714074957758556,
+    "seats": 8.903333333333332,
+    "sellout": 0.0,
+    "our_median": 18.0,
+    "rival_median": 11.0,
+    "at_floor": 0.9364952380952383,
+    "rival_sellout": 0.030476190476190476
+   },
+   "copier": {
+    "matches": 12,
+    "share_matches": 0.13333333333333333,
+    "rev_mean": 1127.6999999999998,
+    "rev_median": 785.3309999999999,
+    "share_revenue": 0.07718472178043119,
+    "seats": 40.160833333333336,
+    "sellout": 0.11833333333333333,
+    "our_median": 22.7,
+    "rival_median": 22.95,
+    "at_floor": 0.42451666666666665,
+    "rival_sellout": 0.125
+   },
+   "seasonal": {
+    "matches": 12,
+    "share_matches": 0.13333333333333333,
+    "rev_mean": 2260.7004999999995,
+    "rev_median": 2518.6965,
+    "share_revenue": 0.1547322329709867,
+    "seats": 61.4675,
+    "sellout": 0.29916666666666664,
+    "our_median": 36.0,
+    "rival_median": 39.3,
+    "at_floor": 0.20204307665632626,
+    "rival_sellout": 0.14916666666666667
+   },
+   "steady": {
+    "matches": 15,
+    "share_matches": 0.16666666666666666,
+    "rev_mean": 2887.1584666666668,
+    "rev_median": 2911.066,
+    "share_revenue": 0.24701219626860318,
+    "seats": 67.10666666666665,
+    "sellout": 0.4153333333333333,
+    "our_median": 42.0,
+    "rival_median": 40.9,
+    "at_floor": 0.13901224954231647,
+    "rival_sellout": 0.4013333333333333
+   },
+   "erratic": {
+    "matches": 30,
+    "share_matches": 0.3333333333333333,
+    "rev_mean": 2918.321766666667,
+    "rev_median": 3036.4844999999996,
+    "share_revenue": 0.49935677402222034,
+    "seats": 68.00766666666667,
+    "sellout": 0.46033333333333337,
+    "our_median": 46.25,
+    "rival_median": 48.05,
+    "at_floor": 0.07174369720192608,
+    "rival_sellout": 0.433
+   }
+  }
+ },
+ "online": {
+  "overall": {
+   "matches": 60,
+   "rev_mean": 2006.4012833333331,
+   "rev_median": 1954.556,
+   "seats": 60.32666666666667,
+   "sellout": 0.3811666666666666,
+   "rival_sellout": 0.23083333333333336,
+   "matches_below_500": 5,
+   "revenue_share_below_500": 0.005055328039770577,
+   "matches_at_floor": 20,
+   "corr_rev_rival_price": 0.8666243677675646,
+   "corr_our_rival_price": 0.9030733293199446
+  },
+  "by_tournament": {
+   "AirborneTody_rank_1": {
+    "rank": 1,
+    "matches": 30,
+    "rev_mean": 2133.5204000000003,
+    "rev_median": 1954.556,
+    "seats": 61.77133333333334,
+    "sellout": 0.37699999999999995,
+    "rival_sellout": 0.22966666666666663,
+    "our_median": 27.65,
+    "rival_median": 32.65
+   },
+   "DeftDaltmanian_rank_7": {
+    "rank": 7,
+    "matches": 30,
+    "rev_mean": 1879.2821666666666,
+    "rev_median": 1845.8980000000001,
+    "seats": 58.882,
+    "sellout": 0.3853333333333334,
+    "rival_sellout": 0.232,
+    "our_median": 25.6,
+    "rival_median": 30.55
+   }
+  },
+  "by_type": {
+   "dumper": {
+    "matches": 14,
+    "share_matches": 0.23333333333333334,
+    "rev_mean": 547.8605714285715,
+    "rev_median": 680.828,
+    "share_revenue": 0.06371314372414885,
+    "seats": 28.62142857142857,
+    "sellout": 0.0,
+    "our_median": 18.0,
+    "rival_median": 15.25,
+    "at_floor": 0.9234642857142857,
+    "rival_sellout": 0.13714285714285715
+   },
+   "copier": {
+    "matches": 4,
+    "share_matches": 0.06666666666666667,
+    "rev_mean": 1764.36075,
+    "rev_median": 1902.516,
+    "share_revenue": 0.058624389336805735,
+    "seats": 62.550000000000004,
+    "sellout": 0.52,
+    "our_median": 28.0,
+    "rival_median": 28.0,
+    "at_floor": 7.970075012846603e-05,
+    "rival_sellout": 0.4
+   },
+   "seasonal": {
+    "matches": 13,
+    "share_matches": 0.21666666666666667,
+    "rev_mean": 2152.9601538461534,
+    "rev_median": 2024.5810000000001,
+    "share_revenue": 0.23249322250483342,
+    "seats": 67.87692307692308,
+    "sellout": 0.5253846153846153,
+    "our_median": 29.4,
+    "rival_median": 38.0,
+    "at_floor": 0.10307841246863428,
+    "rival_sellout": 0.1630769230769231
+   },
+   "steady": {
+    "matches": 13,
+    "share_matches": 0.21666666666666667,
+    "rev_mean": 2469.858,
+    "rev_median": 2537.613,
+    "share_revenue": 0.2667142931203435,
+    "seats": 70.61846153846153,
+    "sellout": 0.4530769230769231,
+    "our_median": 32.7,
+    "rival_median": 32.3,
+    "at_floor": 0.18223757211021568,
+    "rival_sellout": 0.21153846153846154
+   },
+   "erratic": {
+    "matches": 16,
+    "share_matches": 0.26666666666666666,
+    "rev_mean": 2847.496875,
+    "rev_median": 2953.6025,
+    "share_revenue": 0.3784549513138685,
+    "seats": 73.01624999999999,
+    "sellout": 0.504375,
+    "our_median": 37.9,
+    "rival_median": 41.15,
+    "at_floor": 0.1208572933435405,
+    "rival_sellout": 0.34125
+   }
+  }
+ },
+ "latency": {
+  "mean_ms": 19.465626666666665,
+  "max_s": 0.719,
+  "errors": 0
+ },
+ "demand_models": {
+  "matches": 58,
+  "test_days": 279669,
+  "mean_sales_per_day": 0.6243380567742581,
+  "zero_days": 0.5667592761442991,
+  "ceiling_median": 0.07131361815110854,
+  "lad_day_all_zero_matches": 18,
+  "ols": {
+   "r2_median": 0.04611780251731362,
+   "adj_r2_median": 0.04553739316802813,
+   "r2_q25": 0.020619179014700617,
+   "r2_q75": 0.08601004251468788,
+   "block_r2_median": 0.23089164339575935,
+   "share_of_ceiling": 0.775109891372491,
+   "abs_bias_median": 0.01973511700641406,
+   "best_in_matches": 7
+  },
+  "lad_day": {
+   "r2_median": -0.018497342841113817,
+   "adj_r2_median": -0.019130044884321684,
+   "r2_q25": -0.227154490934817,
+   "r2_q75": 0.019459426175210653,
+   "block_r2_median": -0.15463958228770558,
+   "share_of_ceiling": -0.20809695274819684,
+   "abs_bias_median": 0.2598546405064865,
+   "best_in_matches": 0
+  },
+  "lad_block": {
+   "r2_median": 0.038068788580741864,
+   "adj_r2_median": 0.03748283243984557,
+   "r2_q25": 0.01898143574111605,
+   "r2_q75": 0.07726479634745148,
+   "block_r2_median": 0.21377683117162133,
+   "share_of_ceiling": 0.6449932594152451,
+   "abs_bias_median": 0.058089766432476764,
+   "best_in_matches": 1
+  },
+  "choice": {
+   "r2_median": 0.06615612061498588,
+   "adj_r2_median": 0.06531909931420338,
+   "r2_q25": 0.02906602819389026,
+   "r2_q75": 0.12525156537521293,
+   "block_r2_median": 0.2383759921328773,
+   "share_of_ceiling": 0.9910637970869389,
+   "abs_bias_median": 0.02090349392764923,
+   "best_in_matches": 50
+  }
+ },
+ "rival_forecast": {
+  "matches": 60,
+  "one_yesterday": {
+   "mean": 1.9019223672283718,
+   "median": 0.5620300751879699
+  },
+  "one_avg5": {
+   "mean": 2.0950413977698776,
+   "median": 1.2328581908961913
+  },
+  "one_reaction": {
+   "mean": 1.6868631680237018,
+   "median": 0.5945456767920088
+  },
+  "many_flat": {
+   "mean": 7.250213201262657,
+   "median": 6.165347029653892
+  },
+  "many_path": {
+   "mean": 4.130730460319692,
+   "median": 2.460831402759896
+  },
+  "path_better": 40,
+  "path_worse": 5,
+  "path_reduction": 0.4302608287987576,
+  "reaction_reduction": 0.11307464642632648,
+  "reaction_gate_matches": 8,
+  "by_type": {
+   "copier": {
+    "flat": 10.507331957238339,
+    "path": 7.077682044336231,
+    "matches": 4
+   },
+   "dumper": {
+    "flat": 3.3013027954769627,
+    "path": 2.181284386000718,
+    "matches": 14
+   },
+   "erratic": {
+    "flat": 8.37412554819013,
+    "path": 7.914985401971208,
+    "matches": 16
+   },
+   "seasonal": {
+    "flat": 11.63917797107168,
+    "path": 1.130432942714609,
+    "matches": 13
+   },
+   "steady": {
+    "flat": 4.7284540550119,
+    "path": 3.666132565461334,
+    "matches": 13
+   }
+  }
+ },
+ "causation": {
+  "matches": 58,
+  "raw_median": -0.03937875829776884,
+  "raw_positive": 15,
+  "partial_median": -0.13623969534626787,
+  "partial_negative": 58,
+  "slope_controlled_negative": 58,
+  "corr_price_tau_median": -0.022853809439866184,
+  "corr_demand_tau_median": 0.15917141222172862,
+  "they_follow_median": 0.6123175456406726,
+  "we_follow_median": 0.566652782108582,
+  "both_follow_above_half": 30,
+  "copiers": 4,
+  "positive_given_day_only": 15,
+  "positive_given_rival_only": 1,
+  "positive_given_both": 0,
+  "price_rival_median": 0.5045935398414848,
+  "sales_rival_median": 0.11975592325091386,
+  "sales_rival_positive": 50,
+  "day_hypothesis_r": 0.6295334570170027,
+  "rival_hypothesis_r": 0.8524731931632659
+ },
+ "testbed": {
+  "validity": {
+   "matches": 60,
+   "actual_total": 12038407.7,
+   "replay_total": 12035683.586000001,
+   "total_error": -0.00022628524202572553,
+   "r2_levels": 0.9994122351866139,
+   "pearson": 0.9997118477799449,
+   "median_abs_error": 0.005157675022246289,
+   "median_abs_error_big": 0.004981433077433706,
+   "within_10pct": 54,
+   "big_matches": 55,
+   "worst": 0.1579319993682664
+  },
+  "result": {
+   "matches": 60,
+   "old_total": 12035683.586000001,
+   "new_total": 12374784.151999999,
+   "change": 2.817459960433344,
+   "ci95": [
+    0.914083027721992,
+    5.981421349553847
+   ],
+   "better": 15,
+   "worse": 3,
+   "unchanged": 42,
+   "median_match": 0.05741799040204221,
+   "worst_match": -1.5211877233331172,
+   "best_match": 59.63591236917309,
+   "old_per_season": 2005.9472643333336,
+   "new_per_season": 2062.464025333333,
+   "sellout_old": 0.3941666666666667,
+   "sellout_new": 0.43816666666666665,
+   "robust": {
+    "top5_share_of_gain": 0.7800360498366143,
+    "top1_share_of_gain": 0.44886507208012166,
+    "top1_match": "3yKzJN",
+    "top1_testbed_error": -0.04403150770051323,
+    "change_without_top5": 0.6838565981970302,
+    "trusted_matches": 54,
+    "trusted_change": 2.8561142286868124,
+    "trusted_ci95": [
+     0.9018203187409913,
+     5.941095154194567
+    ],
+    "trusted_better": 15,
+    "trusted_worse": 1,
+    "trusted_median": 0.07522463424221026
+   },
+   "by_type": {
+    "dumper": {
+     "matches": 14,
+     "change": 0.24612831655916878,
+     "dollars_per_season": 1.3469971428571237
+    },
+    "copier": {
+     "matches": 4,
+     "change": 26.86237852934339,
+     "dollars_per_season": 481.8599000000002
+    },
+    "seasonal": {
+     "matches": 13,
+     "change": 1.3519408177608438,
+     "dollars_per_season": 28.94071923076963
+    },
+    "steady": {
+     "matches": 13,
+     "change": 1.7148161434883846,
+     "dollars_per_season": 42.32760461538457
+    },
+    "erratic": {
+     "matches": 16,
+     "change": 1.1363868351427442,
+     "dollars_per_season": 32.38874312499946
+    }
+   }
+  },
+  "prev_result": {
+   "matches": 90,
+   "change": 3.834945201476958,
+   "ci95": [
+    2.137342923077018,
+    6.005390350825866
+   ],
+   "better": 30,
+   "worse": 1,
+   "median_match": 0.07683748643390054,
+   "worst_match": -1.2625592590998602,
+   "best_match": 50.319311567614086,
+   "dollars_per_season": 46.85629677777758
+  },
+  "ablation": {
+   "v6.7 without WTP bound": {
+    "matches": 60,
+    "change": 2.7052014592567675,
+    "ci95": [
+     0.7931721875457755,
+     5.870390744990463
+    ],
+    "better": 14,
+    "worse": 3,
+    "median_match": 0.04976528692625104,
+    "worst_match": -1.5211877233331172,
+    "best_match": 59.63591236917309,
+    "dollars_per_season": 54.264914666666336
+   },
+   "v6.7 without monopoly DP": {
+    "matches": 60,
+    "change": 1.8153299265373013,
+    "ci95": [
+     0.12935723711459568,
+     4.934315070634814
+    ],
+    "better": 6,
+    "worse": 2,
+    "median_match": 0.00781958162636709,
+    "worst_match": -1.0863441708895305,
+    "best_match": 59.63591236917309,
+    "dollars_per_season": 36.414560999999445
+   },
+   "v6.7 without copier DP": {
+    "matches": 60,
+    "change": 1.1845709051859554,
+    "ci95": [
+     0.49880986407093936,
+     2.053850314480005
+    ],
+    "better": 12,
+    "worse": 3,
+    "median_match": 0.019843154921628248,
+    "worst_match": -1.5211877233331172,
+    "best_match": 13.836782171957275,
+    "dollars_per_season": 23.761867666666085
+   },
+   "v6.7 without rival uncertainty": {
+    "matches": 60,
+    "change": 2.775744697946392,
+    "ci95": [
+     0.8631999211251056,
+     5.946193083039217
+    ],
+    "better": 15,
+    "worse": 2,
+    "median_match": 0.0,
+    "worst_match": -1.0159808216222976,
+    "best_match": 59.63591236917309,
+    "dollars_per_season": 55.67997483333325
+   },
+   "v6.7 alt: fit revert instead of bound": {
+    "matches": 60,
+    "change": 2.486886223464402,
+    "ci95": [
+     0.5638263287264123,
+     5.661192940183094
+    ],
+    "better": 15,
+    "worse": 10,
+    "median_match": -0.09788116177007478,
+    "worst_match": -3.139913398037253,
+    "best_match": 59.715839405192405,
+    "dollars_per_season": 49.88562616666654
+   }
+  },
+  "copier_matches": {
+   "latest": {
+    "matches": 4,
+    "change": 26.86237852934339,
+    "ci95": [
+     1.1846317996645483,
+     51.24106301398184
+    ],
+    "better": 3,
+    "worse": 1,
+    "median_match": 10.375510640158792,
+    "worst_match": -0.900547257693951,
+    "best_match": 59.63591236917309,
+    "dollars_per_season": 481.8599000000002
+   },
+   "prev": {
+    "matches": 12,
+    "change": 21.71039368749956,
+    "ci95": [
+     11.596766825922005,
+     33.33490517326644
+    ],
+    "better": 9,
+    "worse": 0,
+    "median_match": 21.68706781895753,
+    "worst_match": 0.0,
+    "best_match": 50.319311567614086,
+    "dollars_per_season": 164.6008500000001
+   }
+  },
+  "v64_file": {
+   "v6.7": {
+    "matches": 18,
+    "change": 5.998064936960512,
+    "ci95": [
+     0.12085205827323975,
+     15.13933107603356
+    ],
+    "better": 3,
+    "worse": 0,
+    "median_match": 0.08409487171407992,
+    "worst_match": -0.3553838945961063,
+    "best_match": 131.25,
+    "dollars_per_season": 119.86364277777778
+   },
+   "v6.5": {
+    "matches": 18,
+    "change": 3.6355001066290082,
+    "ci95": [
+     -2.0357654411225923,
+     12.59243920546922
+    ],
+    "better": 2,
+    "worse": 7,
+    "median_match": -0.508651236638008,
+    "worst_match": -5.2275677423006535,
+    "best_match": 40.59609546746987,
+    "dollars_per_season": 72.65081166666647
+   },
+   "v6.7 alt: fit revert instead of bound": {
+    "matches": 18,
+    "change": 5.812146615656499,
+    "ci95": [
+     -0.042046733540965206,
+     14.935852195426575
+    ],
+    "better": 3,
+    "worse": 2,
+    "median_match": 0.04245815110154316,
+    "worst_match": -0.5874824659079403,
+    "best_match": 130.8357443450815,
+    "dollars_per_season": 116.14830333333333
+   }
+  }
+ },
+ "prediction_check": {
+  "matches": 60,
+  "change": 1.7609491241695086,
+  "ci95": [
+   0.6837902788148048,
+   2.8764008774625474
+  ],
+  "better": 33,
+  "worse": 4,
+  "median_match": 0.5879772169737674,
+  "worst_match": -13.393279222071474,
+  "best_match": 17.100309191481998,
+  "dollars_per_season": 34.712442333333506,
+  "by_type": {
+   "dumper": {
+    "matches": 14,
+    "change": 1.9967639010924243,
+    "dollars_per_season": 10.713846428571435
+   },
+   "copier": {
+    "matches": 4,
+    "change": -2.4296868620107603,
+    "dollars_per_season": -44.66927750000003
+   },
+   "seasonal": {
+    "matches": 13,
+    "change": 1.178901695569734,
+    "dollars_per_season": 24.942459230768996
+   },
+   "steady": {
+    "matches": 13,
+    "change": 3.5718354958806264,
+    "dollars_per_season": 85.12476076923096
+   },
+   "erratic": {
+    "matches": 16,
+    "change": 1.5149770920867667,
+    "dollars_per_season": 42.53474625000032
+   }
+  },
+  "change_no_copier": 2.0387847988141194
+ },
+ "oracle": {
+  "v6.5": {
+   "matches": 90,
+   "vs_o1": 0.896686092754714,
+   "vs_o2": 0.9307517375507607,
+   "o2_vs_o1": 0.9633998590368585,
+   "floor_value": 0.01690639292699614,
+   "regret_per_season": 224.44985358364053,
+   "o1_per_season": 2172.5037758058625,
+   "by_type": {
+    "copier": {
+     "matches": 12,
+     "vs_o1": 0.719211032732955,
+     "vs_o2": 0.719211032732955,
+     "o2_vs_o1": 1.0000000000000002,
+     "floor_value": 0.015305700473947192,
+     "regret_per_season": 440.26816049221827,
+     "o1_per_season": 1567.9681604922182
+    },
+    "dumper": {
+     "matches": 21,
+     "vs_o1": 0.9598072936980391,
+     "vs_o2": 1.0623795323613223,
+     "o2_vs_o1": 0.9034504755232823,
+     "floor_value": 0.6325313475843117,
+     "regret_per_season": 7.591519730909633,
+     "o1_per_season": 188.87804354043345
+    },
+    "erratic": {
+     "matches": 30,
+     "vs_o1": 0.9002066988383517,
+     "vs_o2": 0.9459517648127694,
+     "o2_vs_o1": 0.9516412277284857,
+     "floor_value": 0.001680303385273474,
+     "regret_per_season": 323.51343677332005,
+     "o1_per_season": 3241.835203439987
+    },
+    "seasonal": {
+     "matches": 12,
+     "vs_o1": 0.9320997118947387,
+     "vs_o2": 0.9406335603244884,
+     "o2_vs_o1": 0.9909275526733219,
+     "floor_value": 0.003001080994445182,
+     "regret_per_season": 164.68432863011452,
+     "o1_per_season": 2425.3848286301145
+    },
+    "steady": {
+     "matches": 15,
+     "vs_o1": 0.9336784694828743,
+     "vs_o2": 0.9715075982800746,
+     "o2_vs_o1": 0.9610614174668609,
+     "floor_value": 0.005561916128741906,
+     "regret_per_season": 205.08212903406098,
+     "o1_per_season": 3092.2405957007277
+    }
+   },
+   "season1": {
+    "matches": 90,
+    "vs_o1": 0.692769663503304,
+    "vs_o2": 0.7474005769359544,
+    "o2_vs_o1": 0.9269054438563381,
+    "floor_value": 0.008972630799715109,
+    "regret_per_season": 712.3022912683017,
+    "o1_per_season": 2318.463402379413
+   },
+   "later": {
+    "matches": 90,
+    "vs_o1": 0.8988857324879335,
+    "vs_o2": 0.9326538423052178,
+    "o2_vs_o1": 0.9637935230783797,
+    "floor_value": 0.016991974154919598,
+    "regret_per_season": 219.5220511827852,
+    "o1_per_season": 2171.029436143503
+   }
+  },
+  "v6.6": {
+   "matches": 60,
+   "vs_o1": 0.9461808063706749,
+   "vs_o2": 0.9781932521047034,
+   "o2_vs_o1": 0.9672739045529605,
+   "floor_value": 0.02077669042127095,
+   "regret_per_season": 114.12501547145068,
+   "o1_per_season": 2120.526298804784,
+   "by_type": {
+    "copier": {
+     "matches": 4,
+     "vs_o1": 0.7686611606592776,
+     "vs_o2": 0.7686611606592775,
+     "o2_vs_o1": 1.0000000000000002,
+     "floor_value": 0.0,
+     "regret_per_season": 531.0079251737459,
+     "o1_per_season": 2295.368675173746
+    },
+    "dumper": {
+     "matches": 14,
+     "vs_o1": 0.9744402485100426,
+     "vs_o2": 1.0242341692035888,
+     "o2_vs_o1": 0.9513842418162398,
+     "floor_value": 0.24654117013170795,
+     "regret_per_season": 14.370486110638096,
+     "o1_per_season": 562.2310575392094
+    },
+    "erratic": {
+     "matches": 16,
+     "vs_o1": 0.9464336548101766,
+     "vs_o2": 0.9869388471986486,
+     "o2_vs_o1": 0.9589587617272916,
+     "floor_value": 0.003016256500327774,
+     "regret_per_season": 161.1629085229285,
+     "o1_per_season": 3008.6597835229286
+    },
+    "seasonal": {
+     "matches": 13,
+     "vs_o1": 0.9692593268814412,
+     "vs_o2": 0.976918490543051,
+     "o2_vs_o1": 0.9921598744053333,
+     "floor_value": 0.008031858027861105,
+     "regret_per_season": 68.28249415933871,
+     "o1_per_season": 2221.242648005493
+    },
+    "steady": {
+     "matches": 13,
+     "vs_o1": 0.9681582906839281,
+     "vs_o2": 1.0165604915929825,
+     "o2_vs_o1": 0.9523863052820334,
+     "floor_value": 0.009822057462714806,
+     "regret_per_season": 81.23103550806606,
+     "o1_per_season": 2551.089035508066
+    }
+   },
+   "season1": {
+    "matches": 60,
+    "vs_o1": 0.7711730836075862,
+    "vs_o2": 0.871178216001374,
+    "o2_vs_o1": 0.8852070327782048,
+    "floor_value": 0.009632318998447742,
+    "regret_per_season": 538.8653477414979,
+    "o1_per_season": 2354.903681074831
+   },
+   "later": {
+    "matches": 60,
+    "vs_o1": 0.9481461416083087,
+    "vs_o2": 0.9792920201452571,
+    "o2_vs_o1": 0.9681955148247521,
+    "floor_value": 0.02090184161753106,
+    "regret_per_season": 109.83470908488407,
+    "o1_per_season": 2118.1588504990254
+   }
+  },
+  "matched_rivals": {
+   "rivals": 18,
+   "v6.5": {
+    "matches": 62,
+    "vs_o1": 0.9186522397630628,
+    "vs_o2": 0.9538516655104485,
+    "o2_vs_o1": 0.9630975894679086,
+    "floor_value": 0.020489831652864776,
+    "regret_per_season": 180.91740586068332,
+    "o1_per_season": 2223.999841344554
+   },
+   "v6.6": {
+    "matches": 54,
+    "vs_o1": 0.9488562371748535,
+    "vs_o2": 0.9809121570955259,
+    "o2_vs_o1": 0.9673202950042032,
+    "floor_value": 0.018477856634925294,
+    "regret_per_season": 113.03679672470592,
+    "o1_per_season": 2210.1775559839652
+   },
+   "rivals_better": 12
+  },
+  "testbed_in_latest_markets": {
+   "v6.5": 0.9295969699178309,
+   "v6.6": 0.9459666996179054,
+   "v6.7": 0.9726189326186725
+  },
+  "regret_share_by_type": {
+   "copier": 0.3101907868198466,
+   "dumper": 0.029381055607868467,
+   "erratic": 0.37657629599064824,
+   "seasonal": 0.12963450949008676,
+   "steady": 0.15421735209155002
+  },
+  "price_bias": {
+   "duopoly_median": 0.0,
+   "duopoly_mean": 0.17649804164698468,
+   "monopoly_median": 9.299999999999997,
+   "monopoly_mean": 6.516198947632173,
+   "monopoly_days": 7982,
+   "duopoly_days": 406464,
+   "season1_mean": 5.202448579823703,
+   "by_day": [
+    {
+     "day": "(0, 10]",
+     "median": 0.20000000000000284,
+     "mean": 1.003397619047619
+    },
+    {
+     "day": "(10, 20]",
+     "median": 0.10000000000000142,
+     "mean": 0.4681166666666666
+    },
+    {
+     "day": "(20, 30]",
+     "median": 0.0,
+     "mean": 0.20445
+    },
+    {
+     "day": "(30, 40]",
+     "median": 0.0,
+     "mean": 0.06923040289551383
+    },
+    {
+     "day": "(40, 50]",
+     "median": 0.0,
+     "mean": 0.03177037372701471
+    },
+    {
+     "day": "(50, 60]",
+     "median": 0.0,
+     "mean": 0.040944372574385504
+    },
+    {
+     "day": "(60, 70]",
+     "median": 0.0,
+     "mean": 0.059344183242917424
+    },
+    {
+     "day": "(70, 80]",
+     "median": 0.0,
+     "mean": 0.07540406386776535
+    },
+    {
+     "day": "(80, 90]",
+     "median": 0.0,
+     "mean": -0.07428195460181693
+    },
+    {
+     "day": "(90, 100]",
+     "median": 0.0,
+     "mean": -0.21905615655767594
+    }
+   ]
+  }
+ },
+ "prediction_vs_reality": [
+  {
+   "claim": "Test bed reproduces real revenue (total error)",
+   "predicted": 0.10287791885390529,
+   "observed": -0.022628524202572553,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5, all matches (test bed)",
+   "predicted": 4.365896424376459,
+   "observed": 1.7609491241695086,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5, best-reproduced matches (observed: all matches)",
+   "predicted": 2.9695397529902356,
+   "observed": 1.7609491241695086,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5, median match",
+   "predicted": 0.9304854024216103,
+   "observed": 0.5879772169737674,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5 against copiers",
+   "predicted": 10.912905437574484,
+   "observed": -2.4296868620107603,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5 against steady rivals",
+   "predicted": 1.8580624076238506,
+   "observed": 3.5718354958806264,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5 against erratic rivals",
+   "predicted": 4.632334993345721,
+   "observed": 1.5149770920867667,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5 against seasonal rivals",
+   "predicted": 4.74586809602775,
+   "observed": 1.178901695569734,
+   "unit": "%"
+  },
+  {
+   "claim": "v6.6 vs v6.5 against dumpers",
+   "predicted": 0.7011476915248283,
+   "observed": 1.9967639010924243,
+   "unit": "%"
+  },
+  {
+   "claim": "Rival path forecast: error reduction vs flat",
+   "predicted": 42.5922456586337,
+   "observed": 43.02608287987576,
+   "unit": "%"
+  },
+  {
+   "claim": "Reaction model: next-day error reduction",
+   "predicted": 14.788164919868018,
+   "observed": 11.307464642632647,
+   "unit": "%"
+  },
+  {
+   "claim": "Choice model: share of the achievable daily R2",
+   "predicted": 98.25769311175623,
+   "observed": 99.1063797086939,
+   "unit": "%"
+  },
+  {
+   "claim": "Server call time, mean (ms)",
+   "predicted": 28.901408450704228,
+   "observed": 19.465626666666665,
+   "unit": "ms"
+  }
+ ]
+}

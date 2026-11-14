@@ -1,0 +1,101 @@
+{
+ "per_rival": {
+  "rivals": 29,
+  "matches": 150,
+  "better": 17,
+  "worse": 0,
+  "unchanged": 12,
+  "loo_min": 2.719,
+  "loo_min_rival": "FlashyInchworm",
+  "loo_max": 3.739,
+  "top3_share": 0.501,
+  "top3": [
+   {
+    "rival": "FlashyInchworm",
+    "type": "copier",
+    "change": 47.503
+   },
+   {
+    "rival": "SaffronDolphin",
+    "type": "erratic",
+    "change": 24.552
+   },
+   {
+    "rival": "BlueFalcon",
+    "type": "copier",
+    "change": 30.069
+   }
+  ],
+  "copier_bots": 5
+ },
+ "copier_modes": {
+  "lag2": {
+   "66": {
+    "matches": 4,
+    "change": 0.7341434477753817,
+    "better": 2,
+    "worse": 0,
+    "worst_match": -0.06544274664643801,
+    "median_match": 0.3428823199497333
+   },
+   "65": {
+    "matches": 12,
+    "change": 0.0556787857189045,
+    "better": 0,
+    "worse": 0,
+    "worst_match": -0.001333055879959577,
+    "median_match": 0.025109521172894667
+   }
+  },
+  "noise": {
+   "66": {
+    "matches": 4,
+    "change": 0.32755762588507764,
+    "better": 1,
+    "worse": 0,
+    "worst_match": -0.010519926318430795,
+    "median_match": 0.19985599341064697
+   },
+   "65": {
+    "matches": 12,
+    "change": 0.3280363082777571,
+    "better": 1,
+    "worse": 0,
+    "worst_match": -0.07747463007155009,
+    "median_match": 0.0
+   }
+  },
+  "partial": {
+   "66": {
+    "matches": 4,
+    "change": 19.171127246374063,
+    "better": 3,
+    "worse": 0,
+    "worst_match": 0.2196229985950371,
+    "median_match": 5.081534121486541
+   },
+   "65": {
+    "matches": 12,
+    "change": 1.1717402525619924,
+    "better": 2,
+    "worse": 1,
+    "worst_match": -0.8008221661435888,
+    "median_match": 0.0
+   }
+  },
+  "perfect": {
+   "66": null,
+   "65": null
+  }
+ },
+ "v64_rest": {
+  "matches": 208,
+  "change": 5.069518404186257,
+  "better": 66,
+  "worse": 14,
+  "worst_match": -2.5643559464400445,
+  "median_match": 0.08893184155673861,
+  "files": 8,
+  "without_top5": 2.7497671947075863
+ }
+}

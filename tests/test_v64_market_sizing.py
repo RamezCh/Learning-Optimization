@@ -52,20 +52,26 @@ def test_big_market_keeps_v63_capacity_logic():
 
 
 def test_model_learns_from_zero_sales():
-    # Low willingness to pay ($15 midpoint): almost no sales at v6.3's season-1 prices. From
-    # season 2 the price must come down to where the buyers are, and sales must recover.
+    # Low willingness to pay ($15 midpoint): almost no sales at v6.3's season-1 prices. The price
+    # must come down to where the buyers are and stay there. (Up to v6.5 this happened from
+    # season 2 and the test compared season 2+ with season 1; v6.6 fits the choice model on day 50
+    # of season 1, so season 1 already recovers. tests/test_v66_learning_approach.py checks that.)
     info, sold, own = _play(4, lambda t, own: 20.0, m=15.0)
     assert np.median(own) <= 20.0
-    assert np.mean(sold[1:]) > 2 * sold[0]
+    assert np.mean(sold[1:]) > 0.8 * sold[0]
+    assert min(sold[1:]) >= 8
 
 
 def test_copier_is_detected_and_held():
     # Rival sets its price to our price yesterday.
     info, _, own = _play(3, lambda t, own: own[-1] if own else 60.0)
     assert duopoly._rival_is_copier(info)
-    assert info["copier_hold"] is not None
-    # One held price for most of the last season (no season-end clearance against a copier).
-    assert np.mean(np.abs(np.array(own[30:]) - own[-1]) < 0.01) > 0.9
+    # v6.4-v6.6: one held price for most of the last season. v6.7: once the choice model is fitted the
+    # copier price comes from the DP (rival price = ours), which moves slowly with day and seats left;
+    # still no season-end clearance against a copier.
+    last = np.array(own[30:])
+    assert np.mean(np.abs(np.diff(last)) <= 1.5) > 0.95
+    assert last.min() >= duopoly.COPIER_PRICE_RANGE[0] and last.max() <= duopoly.COPIER_PRICE_RANGE[1]
 
 
 def test_flat_rival_is_not_a_copier():

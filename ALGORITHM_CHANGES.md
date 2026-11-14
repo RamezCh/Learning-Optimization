@@ -1,4 +1,4 @@
-# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1` → `v6.0` → `v6.1` → `v6.2` → `v6.3` → `v6.4`)
+# Dynamic Pricing Algorithm Evolution & Technical Blueprint (`v1.0` → `v2.0` → `v3.0` → `v4` → `v5.0` → `v5.1` → `v6.0` → `v6.1` → `v6.2` → `v6.3` → `v6.4` → `v6.5` → `v6.6` → `v6.7`)
 
 This document archives the complete iterative engineering progression of our autonomous pricing algorithm, [`duopoly.py`](duopoly.py), across every generation:
 - **`v1.0` Baseline**: The initial heuristic holdout strategy that failed due to flawed market size assumptions (89.9% seat spoilage, \$0 revenue in 4 of 6 tournaments).
@@ -1082,3 +1082,107 @@ No rival-market cell gets worse beyond its 95% interval. Gains come against the 
 - `tests/test_v65_dp_seat_value.py` (6 tests: seat value positive and diminishing, policy on the grid, zero value after the last day, speed, DP active once fitted, off before).
 - `analytics/v64_testbed.py`, `analytics/experiments/duopoly_dp_mu.py`.
 
+## 23. v6.6: A Learning Approach with Linear and Nonlinear Optimisation (`data/v6.5`)
+
+Full evaluation, figures and every number: [`EVALUATION.md`](EVALUATION.md) (that file always describes the current version). This section is the change-log entry.
+
+### 23.1 Starting point
+
+v6.5 played three tournaments (`data/v6.5`, 90 matches, ranks 4, 8, 9). The course material for this step is Bertsimas & Perakis, *Dynamic Pricing: A Learning Approach* (2001) and the lecture's four steps: (1) estimate our demand by a linear programme, (2) average the coefficients, (3) estimate the rival, (4) maximise our revenue with a one-dimensional solver. Each step was tried on the v6.5 logs and kept only where it measured better than what `duopoly.py` already did.
+
+### 23.2 What changed in `duopoly.py`
+
+| # | Change | Lecture step | Type |
+| :---: | :--- | :---: | :--- |
+| 1 | **Rival price forecast.** Per day of the season the median rival price of the last 10 seasons (profile), an AR(1) factor φ for today's gap to it, and a reaction model $r_t = a + c\,r_{t-1} + b\,p_{t-1}$ fitted by least absolute deviations as a linear programme on the last 3 seasons (used only if its error is ≤ 70% of "same price as yesterday"). | 3 | Linear programme + time series |
+| 2 | **The DP uses the forecast path** $r_d = \text{profile}_d + \varphi^{d-t}(r_t - \text{profile}_t)$ instead of one price held to day 100. Market sizing uses it too. | paper §2 | Dynamic programme |
+| 3 | **Today's price from a scalar solver**: $\max_p E[p\min(D,s) + V(t+1, s-\min(D,s))]$ with today's rival forecast, every day (the DP table is still rebuilt every 10 days). | 4 | Nonlinear programme |
+| 4 | Days on which the rival was sold out are left out of the demand data (a sold-out rival still posts a price, \$0.10–\$999). | 1 (data) | – |
+| 5 | The choice model is first fitted on day 50 of season 1 (was day 100). | 1 | – |
+
+Switches at the end of the file: `RIVAL_PATH_IN_DP`, `RIVAL_PATH_IN_SIZING`, `RIVAL_REACTION_TODAY`, `NLP_PRICE`, `SKIP_SOLD_OUT_RIVAL_DAYS`, and `LOGIT_MIN_OBS`. With all of them at their v6.5 values the file reproduces v6.5's test-bed revenue exactly.
+
+### 23.3 Results
+
+| Measure | Result |
+| :--- | :--- |
+| Rival forecast error, rest of the season | \$7.69 → \$4.41 per day |
+| Test bed `analytics/v65_testbed.py`, 90 matches × 100 seasons | **+4.37%** vs v6.5 (95% interval +2.46% to +6.85%), 56 matches better / 1 worse, worst -2.8% |
+| Same, 60 check matches not used for choosing | +4.24% |
+| Same, 57 matches the test bed reproduces within ±10% | +2.97% |
+| Same, without the 5 biggest winners | +2.16% |
+| Old simulator (different demand model, 5 seeds × 30 seasons) | low +0.3%, average −0.9%, high −0.6% |
+
+Contribution inside v6.6 on the check matches (v6.6 minus the same version without the part): path +1.35, solver +0.29, day-50 fit +1.76, data fix +0.78 points.
+
+Reading: the test-bed gain is real inside the test bed (same rivals, same random buyers) but concentrated in a minority of matches, and the old simulator shows no gain. The simulator's loss comes from change 5 alone; the other four are neutral there. A fair expectation for a tournament is between 0% and +3%.
+
+### 23.4 Tested and not adopted
+
+| Candidate | Result | Why not |
+| :--- | :--- | :--- |
+| Lecture step 1 as written: linear demand, least absolute deviations by LP, one row per day | Out-of-sample $R^2$ -0.045; all coefficients 0 in 43 of 89 matches | The LP fits the median, and the median of daily sales is 0 (66% of days sell nothing) |
+| Same on 5-day blocks | $R^2$ 0.040 vs 0.064 for the choice model; in season 1 pricing +0.11 points with a −3.6% worst match | Behind the choice model, gain inside noise |
+| Rival sell-out share inside the DP | −0.49 points | The choice model prices too high without a rival (§22.2 again) |
+| Several starting points for the choice-model fit | −0.33% | No gain |
+| Logging sold-out-rival days as "no rival" instead of leaving them out | +4.14% vs +4.24%, worst match -1.5% vs -0.8% | Same revenue, larger worst case |
+| \$10 price floor | +2.11 points | We never priced below \$18; the gain is extrapolation (as in §20) |
+
+### 23.5 Test-bed correction
+
+The v6.5 test bed first fitted each match's demand from one starting point (as `v64_testbed.py` does). In 7 of 90 matches the fit stopped in a flat region where price does not matter below \$1,000, with a much worse likelihood. `v65_testbed.py` uses 8 starting points and keeps the best. `v64_demand_fits.json` was not rechecked.
+
+### 23.6 Files
+
+`duopoly.py` (v6.6), `tests/test_v66_learning_approach.py` (11 tests; 51 in total), `tests/test_v64_market_sizing.py` (one assertion updated: the low-willingness-to-pay market now recovers inside season 1), `analytics/v65_testbed.py`, `analytics/evaluate_v66.py`, `analytics/write_evaluation_md.py`, `analytics/experiments/` (baseline `duopoly_v65.py`, `only_*.py`, `without_*.py`, `logged_as_no_rival.py`, simulator output), `EVALUATION.md`, `imgs/v66_*.png`.
+
+## 24. v6.7: Monopoly Days, Copiers, a Bounded Willingness to Pay and Pricing Under Rival Uncertainty (`data/v6.6`)
+
+Full evaluation, figures and every number: [`EVALUATION.md`](EVALUATION.md). The evaluation of v6.6 written before its
+tournaments is archived in [`EVALUATION_v6.6.md`](EVALUATION_v6.6.md); section 5 of `EVALUATION.md` checks it.
+
+### 24.1 v6.6 online
+
+Three tournaments (ranks 1, 2, 7; the rank-2 log was lost to a platform bug, so 60 matches are analysed). A new
+market-normalised measure, revenue / revenue of an oracle that knows the demand and the rival's actual prices
+(`analytics/oracle.py`): v6.6 94.6% online, v6.5 89.7% in its
+own markets; but replayed in the same v6.6 markets v6.5 reaches 93.0%
+and v6.6 94.6%, so most of the online jump is easier markets. v6.6 vs
+v6.5 on the new matches: +1.76% (predicted: +4.37%; stated expectation 0% to
++3%). The copier gain predicted for v6.6 reversed (−2.43%).
+
+### 24.2 What changed in `duopoly.py`
+
+| # | Change | Found by | Switch |
+| :---: | :--- | :--- | :--- |
+| 1 | Rival sold out: DP price with no rival, but it may only **lower** the hand-made monopoly price | Our price vs the oracle's: hand rule a median $9.30 too high; uncapped DP lost 20% in one match | `DP_MONOPOLY`, `MONOPOLY_DP_CAP` |
+| 2 | Copier: DP with the rival's price = ours, while the fitted willingness to pay $m \le \$150$; otherwise the search, which now ranks prices by whole-season revenue (it used revenue per day held and never counted days after selling out → drifted to ~\$30; oracle ~\$50) | Oracle regret by rival type (31% from 4 copier matches), day-by-day trace | `COPIER_DP`, `COPIER_DP_MAX_M`, `COPIER_SEASON_REVENUE` |
+| 3 | $m \le \$150$ in the choice-model fit | Fitted $m$ of \$160–\$446 in 12 of 60 v6.6 and 9 of 90 v6.5 matches; caused the uncapped-DP failure and a collapse of v6.6 in data/v6.4 match 446Pbr (rival parked at \$100; v6.6 priced \$100 for ~30 seasons, 1 in 8 random replays) | `LOGIT_M_MAX` |
+| 4 | Today's price maximises expected revenue over the rival forecast **plus its last 60 forecast errors** | data/v6.4 LvrJkv: a rival at a random \$5–\$87 every day; the correct model + one guess earned less than a wrong model | `RIVAL_UNCERTAINTY_TODAY` |
+
+### 24.3 Results (test bed `analytics/testbed.py`, same rivals and buyers for both versions)
+
+| Data | Change vs v6.6 | Better / worse | Worst match |
+| :--- | :---: | :---: | :---: |
+| data/v6.6, 60 matches x 100 seasons | **+2.82%** (95%: +0.91% to +5.98%) | 15 / 3 | −1.5% |
+| data/v6.5, 90 x 60 | +3.83% | 30 / 1 | −1.3% |
+| data/v6.4 day 1 Tody_Rank_33, 18 x 100 | +6.00% | 3 / 0 | −0.4% |
+| Old simulator (uniform willingness to pay), 5 seeds x 30 | +1.7% | – | copycat (average market) \$1,424 → \$1,702 |
+
+Contribution of each change inside v6.7 on data/v6.6 (v6.7 minus v6.7 without it): monopoly DP
++1.00, copier DP +1.63, $m$ bound
++0.11, rival uncertainty +0.04 points. Instead of
+the bound, moving the first fit back to day 100 also repaired 446Pbr but earned +2.49%
+with 10 worse matches; the bound was adopted.
+
+Tested and not adopted: a DP averaging demand over the rival's past season paths (no effect, twice), logging
+sold-out-rival days as "no rival" (does not repair $m$), logging them with the posted price (wrong data that happened
+to help one match). Expected tournament effect: +1% to +3% over v6.6.
+
+### 24.4 Files
+
+`duopoly.py` (v6.7), `tests/test_v67_monopoly_copier_uncertainty.py` (10 tests; 55 in total, +6 that need the
+analytics data), `tests/test_v64_market_sizing.py` (copier test: DP price instead of one held price),
+`analytics/testbed.py` (any data folder), `analytics/oracle.py`, `analytics/evaluate.py`,
+`analytics/write_evaluation_md.py`, `analytics/merge_testbed_v67.py`, `analytics/parse_simulator_v67.py`,
+`EVALUATION.md` (v6.7), `EVALUATION_v6.6.md` (archive), `imgs/v67_*.png`.
