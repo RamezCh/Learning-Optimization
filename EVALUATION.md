@@ -1,308 +1,193 @@
-# Evaluation of the current algorithm (`duopoly.py` v6.7)
+# Evaluation of the current algorithm (`duopoly.py` v6.8)
 
-> **This file always describes the current `duopoly.py`, evaluated on the latest tournament logs (`data/v6.6`, played by v6.6).** What the algorithm does, how it is measured, how good its models are, what is correlation and what is cause, how the offline simulation works and how far to trust it, where the weak points are and how they were found, and **how accurate the previous evaluation was** (section 5).
+> **This file always describes the current `duopoly.py`, evaluated on the latest tournament logs (`data/v6.7`, played by v6.7 under three accounts: AirborneTody, DeftDalmatian, ProficientCivet; 6 files, 210 matches × 100 seasons).** It covers what changed, how it is measured, how accurate the previous evaluation was (section 5), what is correlation and what is cause (section 7), how far the two simulations can be trusted (sections 8–9), and the weak points and how they were found (section 10).
 >
-> Every number and figure is produced by `analytics/evaluate.py` and `analytics/oracle.py`, stored in `analytics/evaluation_v6.6.json`, and written into this file by `analytics/write_evaluation_md.py`. The evaluation of v6.6 written before its tournaments is archived in [`EVALUATION_v6.6.md`](EVALUATION_v6.6.md). History of all versions: [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md).
+> Numbers come from `analytics/oracle.py`, `analytics/testbed.py`, `analytics/selfplay.py` / `analytics/selfplay_markets.py` and the scripts in `analytics/review_v67/`. The evaluation of v6.7, written before its tournaments, is archived in [`EVALUATION_v6.7.md`](EVALUATION_v6.7.md). History: [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md) §25.
 
 ## 1. Summary
 
 | Question | Answer |
 | :--- | :--- |
-| How did v6.6 do online? | Ranks 1, 2 and 7 in three tournaments (the rank-2 log was lost to a platform bug; 60 matches analysed). v6.5 had ranks 4, 8, 9. |
-| Better than v6.5, fairly measured? | Yes, by **+1.8%** (v6.5 replayed in the same v6.6 markets; 33 matches better / 4 worse), not by the +4.4% the last evaluation headlined. Online, v6.6 earned 94.6% of what its markets made possible (v6.5: 89.7%), but most of that jump is easier markets: replayed in the *same* v6.6 markets, v6.5 reaches 93.0% and v6.6 94.6% (section 4.2). |
-| Was the last evaluation accurate? | The measurement tools were: the test bed reproduces v6.6's real revenue to −0.02%, the rival-forecast and demand-model scores replicate on the new data. The *forecast of the gain* was too high (+4.37% predicted, +1.76% measured on the new matches), and the copier gain reversed. Its stated tournament expectation, 0% to +3%, was right. Section 5. |
-| What changed in v6.7? | Four changes to the optimised price and the dynamic programme, all found in the v6.6 logs or in an out-of-sample replay of old logs: monopoly days priced by the DP (capped at the hand rule), copiers priced by the DP (and a bug in the copier search fixed), a bound on the fitted willingness to pay, and today's price optimised over the rival's likely prices instead of one guess. Section 2. |
-| One quality number | Test bed, all 60 v6.6 matches x 100 seasons, same rivals and buyers for both versions: **+2.82%** vs v6.6 (95% interval +0.91% to +5.98%), 15 matches better / 3 worse, worst match −1.5%. **Concentrated:** median match +0.1%, without the 5 biggest winners +0.68%; the 4 copier matches gain +26.9%, the other rival types +0.2% to +1.7%. |
-| Does it hold elsewhere? | data/v6.5 matches: +3.83% (30 / 1). data/v6.4 file: +6.00% (3 / 0); the other 8 data/v6.4 files, never used for a decision: +5.07% over 208 matches (66 / 14). Old simulator (different demand model): +1.7%. Per rival bot: 17 of 29 better, 0 worse (section 9.4). |
-| Honest expectation for the next tournament | +1% to +3%, depending mostly on how many copiers we meet (about +1% with none). Section 11. |
+| How did v6.7 do online? | Ranks 2, 6, 7 (day 1) and 3, 4, 7 (day 2). Rank is noisy; the quality measure is revenue relative to what the market allowed: **93.1%** of the perfect-information DP, **96.8%** of the fair DP (section 4). |
+| Is selling out in ~36% of seasons a problem? | **No.** The perfect-information DP sells out in 38.7% of the same seasons and leaves as many seats unsold (24.9 vs our 25.3). 21% of our sell-outs are on day 100; we are out of seats on 1.46% of season-days (section 4.2). |
+| Was the last evaluation accurate? | Direction yes, size too low: it expected +1% to +3% over v6.6; replaying v6.6 on the new matches gives **+4.86%** for v6.7. The test bed over-predicts v6.7's own revenue on the new data by 3.2% (v6.6 data: −0.02%) (section 5). |
+| Where was money lost? | **Price wars to the $18 floor** against rivals that react to us: 16 of the 28 match-files where our own accounts met sat at $18 for ~100 seasons, at about half of what a matched price earns. Plus a copier flag that could never clear (2 matches, −18% to −22% per season) and a $60 cap on the copier price (section 6). |
+| What changed in v6.8? | A copier flag that clears, a copier price up to $80, and a **cooperative offer**: with evidence of a price war, each season starts at the price that is best if the rival matches us, and keeps it while the rival does not undercut (section 2). Leader pricing on the rival's reaction model was tested and **not adopted**. |
+| One quality number | **Self-play** on the 9 markets where our accounts met (simulator reproduces the real logs to −0.7%): **+15.1%** revenue, floor-war markets +10% to +104%, high-demand markets 0% to +2% (section 9). |
+| Cost against rivals that ignore us | Test bed with logged rivals: **+0.02%** on data/v6.7, −0.05% on data/v6.6, −0.01% on data/v6.5 (20 seasons each) (section 8). |
+| Honest expectation | Against rivals that ignore our price: nothing changes. Against our own accounts: large gains in poor markets. Against classmates that follow us: unknown until tested online (section 11). |
 
 ## 2. The algorithm
 
-The lecture's four steps (*A learning approach to dynamic pricing using nonlinear and linear optimization*, after Bertsimas & Perakis 2001), where each one lives in `duopoly.py`, and what v6.7 changed:
+The lecture's four steps (*A learning approach to dynamic pricing*, after Bertsimas & Perakis 2001) and what v6.8 changed:
 
-| Step | In `duopoly.py` | Optimisation | Changed in v6.7 |
+| Step | In `duopoly.py` | Optimisation | Changed in v6.8 |
 | :--- | :--- | :--- | :--- |
-| 1. Estimate our demand | Choice model: buyers/day $\sim$ Poisson$(n e^{k\tau})$, each buys from us with probability $\frac{e^{b(m-p)}}{1+e^{b(m-p)}+e^{b(m-r)}}$; Poisson maximum likelihood on our own days, first on day 50 of season 1, then every 25 days and every season end | Nonlinear (Nelder–Mead) | **$m \le \$150$** in the fit (the course model's highest willingness to pay) |
-| 2. Coefficients for the next period | Refit on the last 3,000 days | – | – |
-| 3. Estimate the rival | Tomorrow: $r_t = a + c\,r_{t-1} + b\,p_{t-1}$ by least absolute deviations (**linear programme**, used only if it beats "same as yesterday" by 30%). Rest of the season: median price per day of the last 10 seasons + AR(1) | LP + time series | **Its last 60 forecast errors are kept** |
-| 4. Our optimal price | $\max_p E[\,p\min(D,s) + V(t+1, s-\min(D,s))\,]$ by a bounded scalar solver every day (**nonlinear programme**) | NLP | **Expectation also over the rival's price today** (forecast + each kept error), not one guess |
-| Dynamic programme | $V(t,s)$ by backward induction, 100 days x 80 seats x \$18–\$100, on the forecast rival path; rebuilt every 10 days | DP | **Also used when the rival is sold out** (no rival; its price may only lower the hand-made monopoly price) **and against copiers** (rival price = ours) |
+| 1. Estimate our demand | Choice model: buyers/day ~ Poisson$(n e^{k\tau})$, P(buy from us) $= \frac{e^{b(m-p)}}{1+e^{b(m-p)}+e^{b(m-r)}}$; Poisson ML from day 50 of season 1, $m \le \$150$ | Nonlinear | – |
+| 2. Coefficients for the next period | Refit every 25 days and every season end | – | – |
+| 3. Estimate the rival | Tomorrow: $r_t = a + c\,r_{t-1} + b\,p_{t-1}$ by least absolute deviations (**LP**); season path: per-day median + AR(1); last 60 forecast errors | LP + time series | The reaction slope $b/(1-c)$ is now used as **evidence of a price war** |
+| 4. Our optimal price | $\max_p E[p\min(D,s) + V(t+1,s-\min(D,s))]$ by a scalar solver (**NLP**) | NLP | Posted price $= \max(\text{normal price}, \text{cooperative offer})$ while cooperation holds |
+| Dynamic programme | $V(t,s)$, 100 days × 80 seats × \$18–\$100, on the forecast rival path; no rival when it is sold out; rival price = ours against copiers | DP | The **matched-price DP** (rival price = ours) also gives the cooperative offer; copier price may go to \$80 |
 
-Other rules unchanged from v6.6: market sizing (seat value 0 when the market cannot fill the plane), regime priors and the regression before the first fit, sold-out-rival days left out of the demand data.
+The four v6.8 changes (flags in `duopoly.py`):
+
+| # | Change | Flag | Adopted |
+| :---: | :--- | :--- | :---: |
+| 1 | A day on which we held our price and the rival posted a different one counts against "copier" (before, only days on which our price moved were checked, so a flat copier price could never clear a false flag) | `COPIER_UNLATCH` | yes |
+| 2 | Copier DP price up to \$80 (was \$60) | `COPIER_PRICE_MAX` | yes |
+| 3 | **Cooperative offer.** If (a) the rival follows us (reaction slope ≥ 0.3), or (b) both of us sat at the floor last season, or (c) cooperation held last season: start the season at the matched-price DP price with 80 seats (one offer per season). Match a rival between halfway (normal price → offer) and the offer. After 3 days below halfway, best reply for the rest of the season. Cooperative seasons must earn at least as much as best-reply seasons (2 of each first), else retried every 10th season. | `COOP_PRICING` | yes |
+| 4 | Leader pricing: DP and market-sized price with the rival at its reaction $r(p) = \alpha + \beta p$ when $\beta \ge 0.5$ | `LEADER_PRICING` | **no** (section 9.2) |
 
 ## 3. How we measure
 
 | Item | Definition |
 | :--- | :--- |
-| Quality measure | Revenue per season (the competition ranks by total revenue). |
-| **Online, normalised** (new) | Revenue / revenue of an **oracle** that knows the match's demand model and the rival's actual prices and sold-out days in advance and plays the optimal DP (`analytics/oracle.py`). A tournament with rich markets and one with poor markets become comparable. A **fair oracle** knows the demand and the rival's *typical* path only; the gap between the two oracles is the part of the rival nobody can predict. |
-| Offline | The test bed (section 8): each version plays every logged match against the logged rival, with the same random buyers. Differences are caused by the code. Reported: total change, 95% interval (bootstrap over matches), better / worse matches (beyond ±0.5%), worst match. |
+| Quality measure | Revenue per season. |
+| Online, normalised | Revenue / revenue of the **perfect-information DP** (knows the match's fitted demand and this season's rival prices; `analytics/oracle.py`). **Fair DP**: knows the demand and the rival's typical path only. |
+| Offline, rivals that ignore us | **Test bed** (`analytics/testbed.py`): each version plays every logged match against the logged rival prices, same random buyers. Measures what a change costs or gains when the rival does not react. |
+| Offline, rivals that react | **Self-play** (`analytics/selfplay.py`, new): two algorithms play each other in a match's fitted market; both airlines face the same choice model, buyers by Poisson thinning, 80 seats each. The only way to measure a strategy whose value lies in the rival's reaction. |
 | With / without | Each change is removed from the full version, everything else equal. |
-| Out of sample | Changes were found on data/v6.6. They are also measured on data/v6.5, on one data/v6.4 file, and on the old simulator, whose buyers do not follow our demand model. |
-| Prediction check | The previous evaluation's numbers against the same measurements on data/v6.6 (section 5). |
+| Prediction check | The previous evaluation's statements against the new logs (section 5). |
 
-## 4. Online: what happened with v6.6
-
-![v6.6 online scoreboard](imgs/v67_online_scoreboard.png)
-
-| Tournament | Rank | Matches | Revenue / season (mean) | (median) | Seats sold of 80 | We sold out | Rival sold out | Our / rival median price |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `AirborneTody_rank_1` | 1 | 30 | \$2,134 | \$1,955 | 61.8 | 38% | 23% | \$28 / \$33 |
-| `DeftDaltmanian_rank_7` | 7 | 30 | \$1,879 | \$1,846 | 58.9 | 39% | 23% | \$26 / \$31 |
-| `ProficientCivet` | 2 | – | log lost (platform bug) | | | | | |
-| **v6.6, all logged** | – | 60 | \$2,006 | \$1,955 | 60.3 | 38% | 23% | – |
-| v6.5 (data/v6.5) | 4, 8, 9 | 90 | \$1,948 | \$1,743 | 49.5 | 28% | 25% | – |
-
-| Rival behaviour (rules: section 4.1 of EVALUATION_v6.6.md) | Matches | Our revenue / season | Share of our revenue | Seats | We sold out | Rival sold out | Our / rival median price |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| dumper | 14 | \$548 | 6% | 28.6 | 0% | 14% | \$18 / \$15 |
-| copier | 4 | \$1,764 | 6% | 62.6 | 52% | 40% | \$28 / \$28 |
-| seasonal | 13 | \$2,153 | 23% | 67.9 | 53% | 16% | \$29 / \$38 |
-| steady | 13 | \$2,470 | 27% | 70.6 | 45% | 21% | \$33 / \$32 |
-| erratic | 16 | \$2,847 | 38% | 73.0 | 50% | 34% | \$38 / \$41 |
-
-18 of the 20 v6.6 rivals had also played v6.5, so the opponents are largely the same students; the markets are new random draws. v6.6 sold more seats (+10.8 per season) and priced further below the rival (median gap −\$3.60 vs −\$0.14 for v6.5). Sell-outs still came late (median day 98; 2% of seasons before day 85), so this is not underpricing that empties the plane early.
+## 4. Online: what happened with v6.7
 
 ### 4.1 How much of the available revenue did we earn?
 
-![Oracle efficiency](imgs/v67_oracle_efficiency.png)
-
-| | v6.5 online (data/v6.5) | v6.6 online (data/v6.6) |
-| :--- | :---: | :---: |
-| Revenue / perfect-information oracle | 89.7% | **94.6%** |
-| Revenue / fair oracle (knows the rival's typical path only) | 93.1% | 97.8% |
-| Fair / perfect oracle (= the rival's unpredictable part) | 96.3% | 96.7% |
-| Season 1 only | 69.3% | 77.1% |
-| Same 18 rivals in both | 91.9% | 94.9% (12 of 18 rivals better) |
-| Left on the table per season (vs perfect oracle) | \$224 | \$114 |
-| What a \$1 instead of \$18 floor would add (inside the model) | +1.7% | +2.1% |
-
-### 4.2 Questioning the online jump
-
-89.7% → 94.6% looks like a large step. But the oracle only normalises for market size, not for how *hard* a market is: copiers and dumpers are hard, and v6.5 met 12 copiers in 90 matches, v6.6 only 4 in 60. The test bed answers it directly: every version replayed in the same v6.6 markets earns
-
-| Version in the v6.6 markets (test bed) | Share of the perfect-information oracle |
+| All 210 matches × 100 seasons | Value |
 | :--- | :---: |
-| v6.5 | 93.0% |
-| v6.6 | 94.6% |
-| v6.7 | 97.3% |
+| Actual / perfect-information DP | **93.1%** |
+| Actual / fair DP (typical rival path) | **96.8%** |
+| Fair DP / perfect-information DP (the rival's unpredictable part) | 96.2% |
+| Perfect-information DP with a \$1 floor / with \$18 | 101.8% |
 
-So of the 4.9-point jump, about 1.6 points are v6.6's code and the rest are easier markets and rivals. The matched-rival comparison has the same problem (same rival, different random market).
+v6.6 reached 94.6% on data/v6.6. The two numbers are not a comparison of versions: the markets differ (section 5 replays both versions on the same markets).
 
-### 4.3 Where the rest was lost (this found the v6.7 changes)
+### 4.2 Selling out
 
-- **Copiers:** 31% of everything left on the table came from the 4 copier matches. Against FlashyInchworm (copies our previous price on 100% of days) v6.6 held ~\$30 and sold out every season, often by day 64–88; the oracle charges ~\$49–53. Cause: the season-to-season search ranked prices by revenue per day held, and days after selling out were never counted, so selling out early at a low price looked as good as selling all season at a higher one. And the season noise is larger than the difference between \$1 steps.
-- **Monopoly days:** with the rival sold out, the hand-made monopoly rule priced a median \$9.30 above the fair oracle (7,982 days). On duopoly days the median difference is \$0.00 on every day of the season: the DP's optimisation is right, given the model.
-- **Season 1:** 77% of the oracle (later seasons 95%); prices \$5.2 above the fair oracle on average.
-- **Erratic rivals:** 38% of the loss, but mostly the unpredictable part (fair-oracle gap).
+![](imgs/v68_sellout_vs_oracle.png)
+
+| Seasons 1–20, same markets | v6.7 (logs) | Perfect-information DP | Fair DP |
+| :--- | :---: | :---: | :---: |
+| Seasons sold out | 37.6% | 38.7% | 37.8% |
+| Sold out by day 90 | 2.6% | 0.3% | 3.8% |
+| Days out of seats per season | 1.22 | 0.62 | 1.65 |
+| Unsold seats per season | 25.3 | 24.9 | 25.3 |
+
+- All 100 seasons: sold out in 36.2% of seasons. Median sell-out day 98; 1,603 of 7,594 sell-outs on day 100 (the last seat sold on the last day). Out of seats on 1.46% of all season-days.
+- Per match, our sell-out rate tracks the perfect-information DP's with correlation **0.94**. Matches where we sell out ≥ 25 points more often than it explain 5% of the revenue gap to it; matches where we sell out ≥ 25 points less often explain 5.4%.
+- Unsold seats are worth \$0 at the end; a policy that never sells out prices too high. 44% of seasons end with ≥ 20 unsold seats, and in seasons that do not sell out our median price over days 91–100 is the \$18 floor. On 96% of the days we sit at \$18 the fair DP prices ≤ \$19 too: weak demand, not bad pricing.
+- The 3.4% of seasons that sell out before day 90 concentrate in 8 matches (73% of them). Two are the false copier flag (section 6).
+
+### 4.3 Where our prices differ from the fair DP
+
+| Situation | Our price − fair DP price |
+| :--- | :--- |
+| Rival selling, any day of the season | median \$0.0, mean +\$0.1 to +\$1.5 |
+| Rival sold out, days 50–100 (2.5% of priced days) | about +\$10 (we ~\$48, fair DP ~\$37) |
+| Seasons 1–2 (learning) | mean +\$4.1 |
+
+The daily duopoly price is where the DP should be. The losses are in **which game** we play, not in the daily optimisation (section 6).
 
 ## 5. Was the last evaluation accurate?
 
-`EVALUATION_v6.6.md` was written on data/v6.5 before v6.6 played. Here every number it predicted is measured again on data/v6.6. For the gains, the test bed was rebuilt from the v6.6 logs and v6.5 replayed in the new markets, so "observed" is v6.6 vs v6.5 in matches neither was tuned on.
+| Statement in EVALUATION_v6.7.md | New evidence (data/v6.7) | Verdict |
+| :--- | :--- | :--- |
+| Expected tournament effect over v6.6: +1% to +3% | Test bed on the 210 new matches, 20 seasons, same rivals and buyers: v6.7 **+4.86%** over v6.6 (v6.6 better in 29 matches, worse in 75) | Direction right, size too cautious |
+| The test bed reproduces real revenue (−0.02% on data/v6.6) | v6.7 replayed on data/v6.7: test bed **+3.2%** above the logs (seasons 1–20) | Weaker on new data; differences between versions are still exact (same buyers), levels are 3% optimistic |
+| The copier gain needs an exact copier | 8 rivals copied exactly (slope 1.0); the copier DP held \$60 against them, the cap now lifted (+2.8% to +2.9% in 49XLgV and 3Cn7kh) | Right; the cap was too low |
+| Weak point "rival reactions to our price: not identifiable from logs" | 40 of 140 matches with price variation have a rival that follows our price changes the next day (slope > 0.3); the self-play simulator measures reactions without logs | **It was the biggest loss** (section 6) |
+| Rival's unpredictable part: fair / perfect DP = 96.7% | 96.2% | Held |
 
-![Prediction vs reality](imgs/v67_prediction_vs_reality.png)
+## 6. Where the rest was lost
 
-| Claim in EVALUATION_v6.6.md | Predicted | Observed on data/v6.6 | Verdict |
-| :--- | :---: | :---: | :--- |
-| Test bed reproduces real revenue (total error) | +0.1% | −0.0% | **held** (now with the version that actually played) |
-| v6.6 vs v6.5, all matches (test bed) | +4.4% | +1.8% | **too high** by a factor of ~2.5 |
-| v6.6 vs v6.5, best-reproduced matches (observed: all matches) | +3.0% | +1.8% | too high |
-| v6.6 vs v6.5, median match | +0.9% | +0.6% | held |
-| v6.6 vs v6.5 against copiers | +10.9% | −2.4% | **wrong sign**: the copier gain was path-dependent luck of the search |
-| v6.6 vs v6.5 against steady rivals | +1.9% | +3.6% | better than predicted |
-| v6.6 vs v6.5 against erratic rivals | +4.6% | +1.5% | lower |
-| v6.6 vs v6.5 against seasonal rivals | +4.7% | +1.2% | lower |
-| v6.6 vs v6.5 against dumpers | +0.7% | +2.0% | better than predicted (small \$) |
-| Rival path forecast: error reduction vs flat | 42.6% | 43.0% | **held exactly** |
-| Reaction model: next-day error reduction | 14.8% | 11.3% | slightly lower; useful in fewer matches |
-| Choice model: share of the achievable daily R2 | 98.3% | 99.1% | **held** |
-| Server call time, mean (ms) | 28.9 ms | 19.5 ms | better than predicted |
-| Honest expectation for the tournament | 0% to +3% | +1.76% | **held** |
-| "The day-50 fit is the one change with evidence in both directions; first to switch off" | risk | it caused the 446Pbr collapse (section 9) | **held**; repaired by the m bound |
-| Old simulator: "one cell outside the 95% intervals" (old v1.0 rival, average market) | – | \$3,330 ± 91 vs \$3,439 ± 41 overlap | **was wrong**: no cell was outside |
+| # | Flaw | How it was found | Cost in data/v6.7 |
+| :---: | :--- | :--- | :--- |
+| 1 | **Price war to the \$18 floor** | Gap to the fair DP by match: in the matches with the largest gaps the fit flags a "copier" (rival price = our price, both at \$18) and the fair DP earns about twice our revenue. Most of them are matches between two of our accounts. Reproduced in self-play (section 9). | 16 of 28 match-files between our accounts at \$18 for ~100 seasons, at about half of a matched price's revenue |
+| 2 | **Copier flag could never clear** | Matches sitting at exactly \$60.00 for 48 days: the copier-mode cap. The rival copied only 15% (qPw7uh, FierceDuck) and 37% (3Ppuun, two v6.7s) of the informative days. | −18% to −22% per season after seasons 22 and 44 (~0.4% of all revenue) |
+| 3 | **Copier price capped at \$60** | The copier DP on each copier match's fitted model wants \$64–\$67 in 4 matches | +3.3% to +5.5% in those matches inside the model; test bed +2.8% to +2.9% |
+| 4 | Rival sold out: we price ~\$10 above the fair DP | Section 4.3 | 2.5% of priced days; open (section 10) |
 
-**Why the gain was over-predicted.**
+**Why the price war happens.** After the day-50 fit, capacity is slack in these markets, so v6.7 prices at the static best reply to the rival's last price. With the fitted price sensitivity ($b \approx 0.23$–$0.27$, $m \approx 51$–$57$), the one-shot equilibrium price of the choice model lies **below \$18**: two best-repliers undercut each other to the floor within 10 days. The matched-price optimum is \$45–\$50. v6.7's own reaction model had learned that the rival follows ($r_t = -0.11 + 0.11\,r_{t-1} + 0.90\,p_{t-1}$), but the price decision ignored it. Once both prices sit at \$18, prices are flat, and the reaction model fails its own quality gate.
 
-1. *Match mix:* on data/v6.5 the 5 biggest winners were 54% of the gain, and 12 of 90 matches were copiers (the biggest per-type gain). data/v6.6 has 4 copiers in 60, and there v6.6 lost to v6.5 (−2.43%). Without copiers v6.6 gains +2.04% on the new data.
-2. *Selection:* the changes were chosen because they won on the data/v6.5 test bed; some of that win is the noise of those particular matches (a winner's curse). The held-out check matches limited this but could not remove the match-mix effect.
-3. *What did replicate:* everything measured on the logs themselves (test-bed fidelity, forecast errors, model fit). What did not replicate are *differences between versions* that rest on few matches.
+![](imgs/v68_floor_war.png)
 
-Consequence for this evaluation: v6.7's number is reported with its spread over three data sets and the simulator, and section 11 gives a range, not the headline.
+## 7. Correlation or causation?
 
-## 6. Are the models good? (data/v6.6)
+| Observation | Correlation or cause? | How we know |
+| :--- | :--- | :--- |
+| Matches between our own accounts earn less | **Cause: the strategy pair.** | Self-play reproduces the logged revenue of these 9 markets to −0.7% (per market −3.1% to +3.6%) with nothing but the fitted demand and two copies of v6.7. Replacing both with v6.8 changes only the code. |
+| Matches with a high sell-out rate earn more | Correlation (demand). | Rich markets sell out and pay more. Per match, our sell-out rate equals the perfect-information DP's (r = 0.94), so selling out is a consequence of demand, not a lever. |
+| \$18 prices go with low revenue | Mostly correlation. | On 96% of our \$18 days the fair DP also prices ≤ \$19 (weak markets). Only in the floor wars is \$18 the cause (section 6). |
+| Cooperation helps against classmates who follow us | **Not shown.** | Logged rivals cannot react in the test bed; the self-play rival is a copy of our own code. |
 
-![Demand model quality](imgs/v67_demand_model_quality.png)
+## 8. Test bed: what v6.8 costs against rivals that ignore us
 
-Fitted on seasons 1–50, scored on seasons 51–100 (58 matches, 279,669 days; 57% of days sell no seat, 0.62 seats per day).
+The test bed replays the logged rival prices, so a rival never answers our price. A cooperative offer can only lose here: it is the honest worst case.
 
-| Model | $R^2$ daily (median match) | Adjusted $R^2$ | Share of the achievable $R^2$ | $R^2$ of 10-day totals | Level error | Best in (matches) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Linear, least squares | 0.046 | 0.046 | 78% | 0.23 | 2.0% | 7 |
-| Linear, LP per day (lecture step 1 as written) | -0.018 | -0.019 | -21% | -0.15 | 26.0% | 0 |
-| Linear, LP on 5-day blocks | 0.038 | 0.037 | 64% | 0.21 | 5.8% | 1 |
-| **Choice model (used)** | 0.066 | 0.065 | 99% | 0.24 | 2.1% | 50 |
-
-A daily $R^2$ of 0.066 is close to the maximum: with Poisson buyers even the true model explains at most 0.071 (median match). The LP-per-day model fits the median day, which sells 0 seats: all coefficients 0 in 18 of 58 matches.
-
-**A weakness the fit scores do not show.** The choice model predicts daily sales well, but its *absolute* willingness to pay $m$ is weakly identified while the rival is present (demand then depends mostly on price differences). Fitted on duopoly days only, $m$ came out above \$150 in 12 of 60 v6.6 matches and 9 of 90 v6.5 matches (\$160–\$446). That is harmless for duopoly pricing and fatal once the rival is gone: it caused the monopoly-DP failure in 48gs8r and the 446Pbr collapse. v6.7 bounds $m$ at \$150.
-
-![Rival forecast](imgs/v67_rival_forecast.png)
-
-| Rival forecast (each from earlier days/seasons only) | Mean abs. error | Median match |
-| :--- | :---: | :---: |
-| Rest of season: flat 5-day average | \$7.25 | \$6.17 |
-| Rest of season: path (used) | \$4.13 | \$2.46 |
-| Tomorrow: 5-day average | \$2.10 | \$1.23 |
-| Tomorrow: yesterday's price | \$1.90 | \$0.56 |
-| Tomorrow: reaction model (LP) | \$1.69 | \$0.59 |
-
-The path cuts the rest-of-season error by 43% (40 matches better, 5 worse). For erratic rivals it barely helps (\$8.37 → \$7.91): their prices cannot be predicted, which is why v6.7 prices against the spread of their likely prices.
-
-## 7. Correlation or causation? (data/v6.6)
-
-![Correlation vs causation](imgs/v67_correlation_vs_causation.png)
-
-- **Our price and our sales:** a higher price goes with *more* sales in 15 of 58 matches. The third variable is the rival's price (we charge more *and* sell more when the rival is expensive; product of the two links vs raw correlation: r = 0.85). With rival price and day held fixed the price effect is negative in 58 of 58.
-- **Who follows whom:** their price today vs ours yesterday 0.61, ours today vs theirs yesterday 0.57 (medians). The logs cannot separate the directions; only the 4 copiers are certain (exact copies). The reaction model is therefore used as a forecast, not as proof that we can steer the rival.
-- **Online efficiency vs version:** v6.6's higher efficiency online is partly market mix (section 4.2), a correlation that the test bed separates into cause (code) and confounder (markets).
-- **Inside the test bed** both versions face the same rivals and buyers, so a difference is caused by the code. Whether the test bed resembles the tournament is section 8.
-
-## 8. Offline simulation: how it works and how far to trust it
-
-`analytics/testbed.py --data v6.6`: per match the choice model fitted to all 10,000 logged days (8 starting points); the rival replays its logged prices and sold-out days (copiers copy us); every version plays 100 seasons with the same random number per (match, season, day).
-
-![Test bed validity](imgs/v67_testbed_validity.png)
-
-| Check | Result |
-| :--- | :--- |
-| v6.6 replayed vs v6.6 in the tournament, total | \$12,035,684 vs \$12,038,408 (−0.02%) |
-| Per match | $R^2$ = 0.999; median error 0.5% in the 55 matches above \$500 per season; 54 within ±10% |
-| Last time | v6.5 replayed vs v6.5 actual: +0.1%. Now validated with the version that actually played, on data the test bed had never seen |
-| All switches of the new code off | identical to v6.6 to the cent |
-
-| Limit | Consequence |
-| :--- | :--- |
-| Buyers come from the same model family the algorithm fits | Gains are upper estimates; the old simulator (uniform willingness to pay) is the counter-check |
-| Rivals are recordings (except copiers) | Reactions to our new prices are not simulated |
-| Prices never tried (below \$18, above logged prices) | Extrapolation; the \$18 floor stays (section 9) |
-| Differences between versions rest on few matches | Section 5: the last gain forecast was ~2.5x too high |
-
-## 9. Results: v6.7 against v6.6
-
-![Test bed results](imgs/v67_testbed_results.png)
-
-| Data | Matches x seasons | Change vs v6.6 | 95% interval | Better / worse | Worst match |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **data/v6.6** (latest) | 60 x 100 | **+2.82%** | +0.91% to +5.98% | 15 / 3 | −1.5% |
-| data/v6.5 | 90 x 60 | +3.83% | +2.14% to +6.01% | 30 / 1 | −1.3% |
-| data/v6.4 day 1, Tody_Rank_33 | 18 x 100 | +6.00% | +0.12% to +15.14% | 3 / 0 | −0.4% |
-| (same file: v6.5 vs v6.6) | | +3.64% | | 2 / 7 | |
-
-Revenue per season on data/v6.6: \$2,006 → \$2,062; seasons sold out 39.4% → 43.8%. Median match +0.1%. Without the 5 biggest winners: +0.68%; on the 54 matches the test bed reproduces within ±10%: +2.86%.
-
-| By rival behaviour (data/v6.6) | Matches | Change | Per season |
+| Data, 20 seasons | v6.8 vs v6.7 | Better / worse matches (beyond ±0.5%) | Worst match |
 | :--- | :---: | :---: | :---: |
-| dumper | 14 | +0.25% | +\$1 |
-| copier | 4 | +26.86% | +\$482 |
-| seasonal | 13 | +1.35% | +\$29 |
-| steady | 13 | +1.71% | +\$42 |
-| erratic | 16 | +1.14% | +\$32 |
+| data/v6.7, 210 matches | **+0.02%** (95%: −0.05% to +0.11%) | 7 / 17 | −4.4% |
+| data/v6.6, 60 matches | −0.05% (95%: −0.10% to 0.00%) | 1 / 8 | −63.6% (\$198 → \$72 in 20 seasons; next −1.2%) |
+| data/v6.5, 90 matches | −0.01% (95%: −0.06% to +0.06%) | 2 / 12 | −8.4% |
+| data/v6.7 copier matches, 100 seasons | +0.8% (6 matches) | 2 / 0 | 0.0% |
 
-### 9.1 With / without each change (data/v6.6, 60 x 100)
+Without the price-war evidence gate (an earlier draft), cooperation attempts cost **−2.99%** on the 12 matches most hurt and −0.23% overall; with the gate −0.44% and +0.02%. The gate is what keeps v6.8 harmless against non-reacting rivals.
 
-| Version | Change vs v6.6 | Better / worse | Worst match | Contribution of the change |
-| :--- | :---: | :---: | :---: | :---: |
-| **v6.7** | **+2.82%** | 15 / 3 | −1.5% | – |
-| v6.7 without WTP bound | +2.71% | 14 / 3 | −1.5% | +0.11 points |
-| v6.7 without monopoly DP | +1.82% | 6 / 2 | −1.1% | +1.00 points |
-| v6.7 without copier DP | +1.18% | 12 / 3 | −1.5% | +1.63 points |
-| v6.7 without rival uncertainty | +2.78% | 15 / 2 | −1.0% | +0.04 points |
-| alternative: fit revert instead of bound | +2.49% | 15 / 10 | −3.1% | – |
+## 9. Self-play: rivals that react
 
-Copier matches alone: +26.86% on the 4 v6.6 copiers, +21.71% on the 12 v6.5 copiers. The rival-uncertainty change is worth little on data/v6.6 because few of its rivals are random from day to day; it repairs matches like data/v6.4 LvrJkv (+10% there, step 11 below).
+### 9.1 How it works and how far to trust it
 
-### 9.2 How v6.7 was built (and what was rejected)
+Two algorithms are loaded as separate modules with separate states. Each day both post a price; each sells Poisson(rate(own price, rival price)) seats from the match's fitted choice model, capped at seats left; a sold-out airline faces no rival. Same random numbers for every pair of versions (seed per season).
 
-| # | Change / question | Data | Result | Decision |
-| :---: | :--- | :--- | :--- | :--- |
-| 1 | All new switches off | 10 matches x 30 seasons | identical to v6.6 to the cent | check passed |
-| 2 | Monopoly DP (no cap), copier search on season revenue, copier DP, DP over rival scenarios | development half, 30 matches x 50 seasons | +1.50% (9 better / 0 worse), +0.01%, −0.01%, +0.00% | monopoly DP continues; scenario DP rejected (no effect) |
-| 3 | Copier search on season revenue / copier DP | all 4 v6.6 copier matches x 100 seasons | +18.2% (3 / 0) / +26.9% (3 / 1) | both continue |
-| 4 | Same | all 12 v6.5 copier matches x 60 seasons | +1.3% (1 / 2, worst −4.0%) / +21.7% (9 / 0) | copier DP preferred |
-| 5 | Monopoly DP (no cap) | check half, 30 v6.6 matches x 50 seasons | −0.60% (4 / 1); one match −20.2% (48gs8r) | investigated (step 6) |
-| 6 | 48gs8r: why? | trace | the algorithm's fitted willingness to pay m = $447 (true $52): fine with a rival, but alone the DP charges $100 | cap the monopoly DP at the hand rule |
-| 7 | Monopoly DP capped / uncapped / days logged as "no rival" | 4 matches x 40 seasons | +4.24% (3 / 0) / −2.46% / −2.15% (worst −19.1%) | cap adopted |
-| 8 | Out-of-sample check on old data | data/v6.4 day 1, 18 matches x 100 seasons | v6.5 beats v6.6 by 3.6%: match 446Pbr +40.6%, LvrJkv +13.0% | investigated (steps 9-11) |
-| 9 | Which v6.6 part? | the 2 matches x 40 seasons, v6.6 minus one part | 446Pbr: the day-50 fit ($190,824 without it vs $52,322); LvrJkv: dropping sold-out days ($138,157 vs $121,202) |  |
-| 10 | 446Pbr repairs | same | fit back on day 100: $190,790; m bounded at $150 (day-50 fit kept): $191,135 | both repair it; step 12 decides |
-| 11 | LvrJkv: rival at a random $5-$87 every day | same | price against forecast errors: $133,623; + DP over scenarios: $131,768; old "posted price" logging: $138,614 | uncertainty pricing adopted; posted-price logging not (wrong data that happens to help here) |
-| 12 | Fit revert vs m bound, with all other v6.7 parts | all 60 v6.6 matches x 100 seasons | revert +2.49% (15 / 10, worst −3.1%); bound +2.82% (15 / 3, worst −1.5%) | bound adopted |
+**Fidelity:** two copies of v6.7 in the 9 fitted markets where our accounts met reproduce the real logged revenue (seasons 6–30) to **−0.7%** in total, −3.1% to +3.6% per market. The floor war in 3DkTAv appears in the same season as in the logs (figure in section 6).
 
-### 9.3 Check with a different demand model (old simulator)
+**Limit:** the rival is our own code. Classmates' bots are not modelled.
 
-`analytics/benchmark_3regime_models.py`: buyers with uniform willingness to pay, 4 scripted rivals, 5 seeds x 30 seasons; sum over the rivals of mean revenue per season.
+### 9.2 Results (9 markets, seasons 6–30, 2 seeds)
 
-| Market | v6.6 | v6.7 | v6.7 vs v6.6 |
-| :--- | :---: | :---: | :---: |
-| Average (~95 arr.) | \$8,940 | \$9,219 | +3.1% |
-| High (~135 arr.) | \$10,665 | \$10,729 | +0.6% |
-| Low (~68 arr.) | \$4,627 | \$4,696 | +1.5% |
+![](imgs/v68_selfplay.png)
 
-Total +1.7%. Cells whose 95% intervals do not overlap: 1: Copycat (Average (~95 arr.)): \$1,702 ± 108 vs \$1,424 ± 22.
-
-### 9.4 How general is the gain?
-
-Two of the four changes started from single matches (monopoly cap: 48gs8r; rival uncertainty: LvrJkv; the m bound: 48gs8r and 446Pbr). Three checks of whether the result rests on a few scenarios:
-
-**1. Per rival bot** (data/v6.6 and data/v6.5 pooled, 150 matches, 29 distinct bots, `analytics/per_rival_v67.py`). v6.7 is better against 17 bots, worse against 0, and unchanged (within ±0.5%) against 12. Leaving out any one bot, the total gain stays between +2.72% (without FlashyInchworm) and +3.74%. The top 3 bots carry 50% of the gain: FlashyInchworm (copier, +47.5%), SaffronDolphin (erratic, +24.6%), BlueFalcon (copier, +30.1%).
-
-**2. Imperfect copiers.** The test bed simulates copiers as exact copies of our price the day before (the real copiers in the logs copy exactly). Stress test on all copier matches, 40 seasons, `--copier-mode`:
-
-| Copier behaviour | v6.6 copiers (4 matches) | v6.5 copiers (12 matches) |
+| Pair (revenue per airline and season) | Mean | vs v6.7 vs v6.7 |
 | :--- | :---: | :---: |
-| exact copy of our price yesterday (as above) | +26.9% | +21.7% |
-| copies our price of 2 days ago | +0.7% | +0.1% |
-| copies with ±\$2 noise | +0.3% | +0.3% |
-| halfway between our price and its own logged price | +19.2% | +1.2% |
+| v6.7 vs v6.7 | \$2,331 | – |
+| **v6.8 vs v6.8** | **\$2,683** | **+15.1%** |
+| v6.8 without the cooperative offer | \$2,355 | +1.0% |
+| v6.8 with leader pricing (not adopted) | \$2,606 | +11.8% |
+| v6.8 (A) vs v6.7 (B): one side upgraded | A \$2,327, B \$2,337 | −0.2% / +0.3% |
 
-v6.7 is never worse than v6.6. The large gain needs an exact copier: copier detection asks for our previous price within \$0.60 on 80% of days, so lagging or noisy copiers are treated as ordinary rivals by both versions (no gain, and no exposure to the copier DP). The half-copier gain on the v6.6 matches comes from the other v6.7 changes.
-
-**3. Data never used for a decision:** the other 8 data/v6.4 files (208 matches x 10 seasons, rivals of the v6.4 tournaments): v6.7 vs v6.6 **+5.07%**, 66 matches better / 14 worse (beyond ±0.5%), worst match −2.6%, median match +0.1%, without the 5 biggest winners +2.75%.
+- Floor-war markets: 3ik5DA +107%, 4FFenv +104%, 3AbmmC +83%, 3R3Xgy +12%, 4RLfco +10%, YzE7qa +9%. High-demand markets (4Q7YNo, 3NBvow, 7CK3wb): 0% to +2%.
+- 3Ppuun market, 60 seasons: v6.7 vs v6.7 \$5,475, v6.8 vs v6.8 \$5,972 (**+9.1%**). This comes from the copier fixes: either one alone removes the false \$60 lock; both off brings back \$5,475.
+- **Leader pricing was rejected:** it lowers the self-play gain from +15.1% to +11.8%. A leader following its reaction model drifts down with a best-replying rival and breaks the cooperative price. It had no measurable effect in the test bed.
+- **Cooperation is unstable:** in 3DkTAv it breaks and re-forms (plateaus at \$25, figure in section 6). The two copies fit slightly different models, so their offers differ by \$3–\$14. Matching a rival above halfway closes most of that gap.
 
 ## 10. Weak points: how they were found, what was done
 
-| # | Weak point | How it was found | Status in v6.7 |
+| # | Weak point | How it was found | Status in v6.8 |
 | :---: | :--- | :--- | :--- |
-| 1 | Copier search ranked prices by revenue per day held; sold-out days uncounted → drifted to ~\$30 | Oracle regret by rival type (31% from 4 copier matches), then a day-by-day trace of the worst match | **Fixed**; and copiers now priced by the DP |
-| 2 | Hand-made monopoly price a median \$9.30 above the oracle | Our price vs the fair oracle's, per day | **Fixed**: DP, capped at the hand price |
-| 3 | Fitted willingness to pay $m$ can be implausible (\$160–\$446) | A −20% match in the check set, traced to $m$ = \$447; then counted in all matches | **Fixed**: $m \le \$150$ in the fit |
-| 4 | v6.6's day-50 fit could collapse against a rival parked at \$100 (1 in 8 random replays of 446Pbr) | Replaying an old data file (data/v6.4) out of sample | **Fixed** by #3 (the fit date stays) |
-| 5 | Today's price used one guess of a random rival's price | LvrJkv trace: the right model earned less than a wrong one | **Fixed**: expectation over recent forecast errors |
-| 6 | The rival's unpredictable part: fair / perfect oracle = 96.7% | Two oracles | **Open**: a DP over rival scenarios added nothing (tested twice) |
-| 7 | \$18 floor vs dumpers: 14 matches, 6% of revenue; a \$1 floor would add +2.1% inside the model | Oracle with floor \$1 | **Open**: never priced below \$18, so the gain is extrapolation; needs one online experiment |
-| 8 | Season 1: 77% of the oracle | Oracle by season | Open; 1% of revenue |
-| 9 | Rival reactions to our price | Section 7 | Open; not identifiable from logs |
-| 10 | The oracle and the test bed share the algorithm's model family | By construction | The simulator check (9.3) and the out-of-sample data sets are the counterweight |
+| 1 | Price war to the \$18 floor against rivals that react | Gap to the fair DP's copier variant by match → all in matches between our accounts → reproduced in self-play | **Fixed** (cooperative offer) for copies of our code; classmates unknown |
+| 2 | Copier flag never cleared | Flat \$60.00 prices for 48 days → copier cap → copy share of informative days 15% / 37% | **Fixed** |
+| 3 | Copier price capped at \$60 | Copier DP on each copier match's fit | **Fixed** (\$80) |
+| 4 | Cooperation unstable, partial (\$22–\$28 in some markets where the matched price is ~\$45) | Self-play traces | Open: a common focal price (e.g. rounded to \$5) could help |
+| 5 | Rival sold out: ~\$10 above the fair DP on days 50–100 | Oracle day table | Open; logging those days as "no rival" was tested and rejected in v6.7 |
+| 6 | Seasons 1–2: \$4 above the fair DP | Oracle day table by season | Open; learning cost |
+| 7 | The test bed is 3.2% optimistic on data/v6.7 | v6.7 replayed against its own logs | Version differences remain exact; levels need care |
+| 8 | No model of classmates' reactions | – | Open; only an online run can show whether followers (FierceDuck, WonderfulOxpecker, HumongousLocust, BenevolentSwan: slope 0.4–0.8) hold a matched price |
 
 ## 11. What we do not know, and what to expect
 
-- **Next tournament:** +1% to +3% over v6.6. The test bed says +2.82% on the latest matches and +3.83% on the older ones; last time the test bed over-predicted the gain about 2.5x, and the simulator (wrong model on purpose) shows +1.7%. The gain is concentrated: median match +0.1%, +0.68% without the 5 biggest winners, most of it in copier matches. A tournament without copiers should give about +1% (monopoly days); one with several copiers more. Unlike v6.6's copier gain, this one is supported by the simulator's copycat (\$1,424 → \$1,702), which uses a different demand model.
-- **Copier DP prices far above anything we held** (~\$50 vs \$25–33). The test bed's copier demand at \$50 is itself extrapolated from the same logs. The simulator's copycat does not contradict it; an online result will.
-- **Speed:** v6.6 online 19.5 ms per call on average, 0.72 s slowest, 0 errors (limits 200 ms / 5 s). v6.7 adds a few DP runs (copier, monopoly) and an expectation over 60 rival scenarios in the price solver.
+- **Against rivals that ignore our price** (most of the field): v6.8 = v6.7 (test bed +0.02%).
+- **Against our own accounts:** large gains in poor markets (+10% to +100%), none in rich ones. If only one account plays per tournament, this does not apply.
+- **Against classmates that follow us:** the gate lets cooperation start; it either holds (gain) or breaks after 3 days (small loss, then retried at most every 10th season if it keeps losing). Size unknown.
+- DPC rank is noisy; compare revenue per match against the same rivals, not ranks.
 
 ## 12. Reproduce
 
 ```bash
-python -m pytest tests -q                                 # 55 tests (+6 that need data/v6.4 and the analytics data)
-python analytics/testbed.py --data v6.6 --out analytics/testbed_v6.6_all.csv --compare analytics/experiments/duopoly_v65.py
-python analytics/testbed.py --data v6.6 --out work/all66_mbound.csv --compare analytics/experiments/v67_mbound_fit45.py
-# ... with/without runs, data/v6.5, data/v6.4: see work/run*.sh; then
-python analytics/merge_testbed_v67.py      # version-named result tables
-python analytics/oracle.py --data v6.6 && python analytics/oracle.py --data v6.5
-python analytics/benchmark_3regime_models.py --compare analytics/experiments/v67_mbound_fit45.py ... > work/sim_v67.log
-python analytics/parse_simulator_v67.py
-python analytics/evaluate.py               # numbers -> analytics/evaluation_v6.6.json, figures -> imgs/v67_*.png
-python analytics/write_evaluation_md.py    # this file
+python analytics/oracle.py --data v6.7                                   # oracle efficiency, day table
+python analytics/testbed.py --data v6.7 --seasons 20 --compare analytics/experiments/duopoly_v67.py
+python analytics/selfplay.py duopoly.py duopoly.py --fit "AirborneTody_rank_7.csv/3DkTAv" --seasons 30 --seeds 4
+python analytics/selfplay_markets.py out.csv duopoly.py:duopoly.py analytics/experiments/duopoly_v67.py:analytics/experiments/duopoly_v67.py \
+    --markets "3AbmmC,4RLfco,3ik5DA,4FFenv,YzE7qa,3R3Xgy,4Q7YNo,3NBvow,7CK3wb"
+python analytics/review_v67/v67_sellout.py; python analytics/review_v67/oracle_sellout.py   # section 4.2
+python analytics/review_v67/copycheck.py; python analytics/review_v67/reaction.py           # sections 5, 6
 ```
-
-Sources: D. Bertsimas, G. Perakis, *Dynamic Pricing: A Learning Approach* (2001); T. Winter, *A learning approach to dynamic pricing using nonlinear and linear optimization* (Learning Optimization, BHT, lecture slides).

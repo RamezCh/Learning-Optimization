@@ -1,7 +1,7 @@
 """
 duopoly.py
 ----------
-Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.7).
+Autonomous Dynamic Pricing Engine for Airline Duopoly Competition (v6.8).
 Combines Closed-Form Econometric Optimization (MLR) with Microeconomic Guardrails.
 
 Architectural Overview:
@@ -101,6 +101,25 @@ Architectural Overview:
       revenue over these scenarios), not one point forecast.
    Tested and NOT adopted (EVALUATION.md): a DP that averages demand over the rival's past season paths,
    logging sold-out-rival days as "no rival" to pin down m, logging them with the posted price.
+11. Rivals that react to us (v6.8, from the data/v6.7 tournaments):
+   a. Copier flag could never clear: checks were only taken on days our price moved, and the copier price is
+      flat, so a false flag (qPw7uh: rival copied 15% of the time; 3Ppuun: two copies of this algorithm)
+      latched for the rest of the match and held us at $60 (-18% to -22% per season). Now a day on which we
+      held our price and the rival posted a different one counts against "copier" (COPIER_UNLATCH).
+   b. Copier DP price may go up to $80 (COPIER_PRICE_MAX; was $60): against real copiers the DP wants
+      $64-$67 (+2.8% in 49XLgV and 3Cn7kh over 100 seasons).
+   c. Leader pricing (LEADER_PRICING, tested and NOT adopted, off): if the reaction model says the rival settles
+      at r(p) = alpha + beta*p with beta >= 0.5, the DP and the market-sized price use r(p). In self-play it
+      lowered the gain from +15.2% to +11.7% (a leader that follows the reaction model slowly drifts down with
+      a best-replying rival and breaks the cooperative price); no effect in the test bed.
+   d. Cooperative offer (COOP_PRICING): when capacity is slack, two best-repliers undercut each other to the
+      $18 floor (the one-shot equilibrium of the fitted choice model lies below $18). In data/v6.7 our own
+      accounts met in 28 match-files and 16 of them sat at $18 for ~100 seasons. If there is evidence of a
+      price war (rival follows us, both at the floor last season, or cooperation held), each season starts at
+      the matched-price DP price and keeps it (matching a rival between halfway and our offer) until the
+      rival undercuts 3 days; cooperative seasons must earn at least as much as best-reply seasons, else
+      retried every 10th season. Self-play: +15.2% over v6.7 vs v6.7 (EVALUATION.md section 9); test bed with
+      logged (non-reacting) rivals: no measurable cost (EVALUATION.md section 8).
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -291,6 +310,10 @@ def p(
             remaining_capacity,
             state
         )
+        if not _rival_is_copier(state):
+            coop = _coop_price(period, state, raw_price)
+            if coop is not None:
+                raw_price = max(raw_price, coop)
 
     # 7. Safety Bounds & State Persistence
     final_price = _clamp_price(raw_price, state)
@@ -375,6 +398,7 @@ def _handle_season_transition(
         _fit_online_regression(state)
         state["last_closed_season"] = state.get("last_season_seen")
 
+    _close_coop_season(state)
     state["last_season_seen"] = new_season
     state["rival_recent_prices"] = []
     state["low_demand_llr"] = 0.0
@@ -622,14 +646,20 @@ def _update_real_time_signals(
             and prices_history.shape[1] >= 3
         ):
             own = prices_history[0, :]
+            checks = state.setdefault("copy_checks", [])
             if abs(own[-2] - own[-3]) > 0.3:
-                checks = state.setdefault("copy_checks", [])
                 checks.append(1 if abs(latest_rival_price - own[-2]) <= COPIER_TOLERANCE else 0)
-                if len(checks) > COPIER_WINDOW:
-                    checks.pop(0)
+            elif COPIER_UNLATCH and has_rival_capacity and abs(latest_rival_price - own[-2]) > COPIER_TOLERANCE:
+                # v6.8: we held our price and the rival did not post it: a copier would have. Without this a
+                # flat copier price produced no checks at all and a false "copier" flag never cleared.
+                checks.append(0)
+            if len(checks) > COPIER_WINDOW:
+                checks.pop(0)
 
         state["dry_days"] = 0 if last_demand > 0 else state.get("dry_days", 0) + 1
 
+        if my_prev_price < SERVER_SOLDOUT_PRICE_THRESHOLD:
+            state["season_rev"] = state.get("season_rev", 0.0) + my_prev_price * last_demand
         if _rival_is_copier(state):
             state["copier_rev"] = state.get("copier_rev", 0.0) + my_prev_price * last_demand
             state["copier_days"] = state.get("copier_days", 0) + 1
@@ -951,6 +981,85 @@ def _update_copier_hold(state: Dict[str, Any]) -> None:
     hold["price"] = float(np.clip(hold["best_price"] + hold["direction"] * hold["step"], *COPIER_PRICE_RANGE))
 
 
+def _close_coop_season(state: Dict[str, Any]) -> None:
+    """v6.8: season revenue goes to the cooperative or the best-reply record (only seasons with a fitted model)."""
+    rev, tried, eligible = state.get("season_rev", 0.0), state.get("coop_tried", False), state.get("coop_eligible", False)
+    state["coop_held_last"] = bool(tried and not state.get("coop_broken", False))
+    if eligible:
+        state.setdefault("coop_revs" if tried else "br_revs", []).append(float(rev))
+    state["season_rev"], state["coop_tried"], state["coop_eligible"] = 0.0, False, False
+    state["coop_broken"], state["coop_undercut"] = False, 0
+
+
+def _price_war_evidence(state: Dict[str, Any]) -> bool:
+    """
+    v6.8: is there a price war that cooperation could end? Yes if (1) the rival follows our price: steady-state
+    slope b / (1 - c) >= 0.3 in the reaction model, or (2) last season both of us sat at the floor (flat prices
+    give the reaction model nothing to fit), or (3) cooperation held through last season. Against a rival that
+    ignores us none of these holds, so no attempt is made (test bed: attempts cost ~3% there).
+    """
+    reaction = (state.get("rival_model") or {}).get("reaction")
+    if reaction and reaction[1] < 0.95 and reaction[2] / (1.0 - reaction[1]) >= COOP_MIN_FOLLOW:
+        return True
+    own, riv = state.get("own_paths", []), state.get("rival_paths", [])
+    if own and riv:
+        o, r = np.asarray(own[-1], dtype=float), np.asarray(riv[-1], dtype=float)
+        o, r = o[o < TERMINAL_SOLDOUT_PRICE - 1.0], r[np.isfinite(r)]
+        if len(o) and len(r) and np.median(o) <= UNCONSTRAINED_FLOOR + 1.0 and np.median(r) <= UNCONSTRAINED_FLOOR + 1.0:
+            return True
+    return bool(state.get("coop_held_last", False))
+
+
+def _coop_allowed(state: Dict[str, Any]) -> bool:
+    """Try cooperation unless cooperative seasons have earned less than best-reply seasons (then every 10th)."""
+    if not _price_war_evidence(state):
+        return False
+    coop, br = state.get("coop_revs", []), state.get("br_revs", [])
+    if len(coop) < 2:
+        return True
+    if len(br) < 2:
+        return False                                   # two best-reply seasons as the baseline
+    if np.mean(coop[-5:]) >= np.mean(br[-5:]):
+        return True
+    return state.get("last_season_seen", 0) % COOP_RETRY == 0
+
+
+def _coop_price(period: int, state: Dict[str, Any], normal_price: float) -> Optional[float]:
+    """
+    v6.8: offer the price that maximises revenue if the rival matches us (the copier DP, which also prices
+    scarce seats); the caller posts the higher of this offer and its normal price. Keep it while the rival does not undercut by more than $3; after 3 undercut
+    days return to the best reply for the rest of the season. Two copies of this algorithm start at the same price
+    and stay there; against a rival that ignores us an attempt costs at most 3 days.
+    """
+    if not COOP_PRICING or not state.get("logit_fitted", False) or np.exp(state["logit_theta"][1]) > COPIER_DP_MAX_M:
+        return None
+    state["coop_eligible"] = True
+    if state.get("coop_broken", False) or not (state.get("coop_tried", False) or _coop_allowed(state)):
+        return None
+    if state.get("coop_offer_season") != state.get("last_season_seen"):
+        # One offer per season: the matched-price DP price with all 80 seats on day 1. Scarcity later in the season
+        # is priced by the normal DP (the caller takes the higher price), so two copies with different seats left
+        # still post the same offer.
+        _, POL = _dp_values(np.array(state["logit_theta"]), 0.0, 1, copier=True)
+        state["coop_offer"] = float(np.clip(POL[1][DEFAULT_TOTAL_CAPACITY], COPIER_PRICE_RANGE[0], COPIER_PRICE_MAX))
+        state["coop_offer_season"] = state.get("last_season_seen")
+    offer = state["coop_offer"]
+    if offer <= normal_price:
+        return None                                    # no price war today
+    rival = state.get("rival_last_price", offer)
+    if state.get("coop_tried", False) and period > 1 and _rival_was_selling(period - 1, state):
+        # Undercut: the rival is below halfway between our normal price and our offer. Above that we match it
+        # (two copies of this algorithm fit slightly different models and meet at the lower offer).
+        accept = normal_price + 0.5 * (offer - normal_price)
+        state["coop_undercut"] = state.get("coop_undercut", 0) + 1 if rival < accept else 0
+        if state["coop_undercut"] >= COOP_PATIENCE:
+            state["coop_broken"] = True
+            return None
+        offer = min(offer, max(rival, accept))
+    state["coop_tried"] = True
+    return offer
+
+
 def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[str, Any]) -> float:
     """
     v6.4: price that maximises price x expected seats when capacity does not bind (mu = 0),
@@ -962,7 +1071,7 @@ def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[st
     grid = np.arange(UNCONSTRAINED_FLOOR, MAX_PRICE + 0.01, 0.5)
     if _rival_is_copier(state):
         if COPIER_DP and state.get("logit_fitted", False) and np.exp(state["logit_theta"][1]) <= COPIER_DP_MAX_M:
-            return float(np.clip(_dp_copier_price(period, state), *COPIER_PRICE_RANGE))
+            return float(np.clip(_dp_copier_price(period, state), COPIER_PRICE_RANGE[0], COPIER_PRICE_MAX))
         hold = state.get("copier_hold")
         if hold is None:
             # First season against a copier: start from the choice model's best common price.
@@ -972,6 +1081,12 @@ def _calculate_revenue_max_price(period: int, rival_price: float, state: Dict[st
                     "direction": -1.0, "step": COPIER_FIRST_STEP}
             state["copier_hold"] = hold
         return float(hold["price"])
+    follower = _rival_follower(state)
+    if follower is not None:
+        # v6.8 leader price: the rival will follow to r(p), so maximise p x seats(p, r(p)).
+        alpha, beta, lo, hi = follower
+        revenue = grid * _logit_rate(theta, grid, np.clip(alpha + beta * grid, lo, hi), tau)
+        return float(grid[int(np.argmax(revenue))])
     rival_price = _rival_today(state, rival_price, period)
     revenue = grid * np.mean(_logit_rate(theta, grid[:, None], np.atleast_1d(rival_price)[None, :], tau), axis=1)
     price = float(grid[int(np.argmax(revenue))])
@@ -1118,7 +1233,7 @@ DP_MONOPOLY = True         # v6.7: DP price (no rival) when the rival is sold ou
 MONOPOLY_DP_CAP = True     # ... capped at the hand-made monopoly price (v6.5 tested it uncapped: rejected)
 
 
-def _dp_values(theta, rival, start_day, selling_share=None, copier=False):
+def _dp_values(theta, rival, start_day, selling_share=None, copier=False, react=None):
     """V[t][s] = expected revenue from day t to 100 with s seats, pricing optimally each day.
     Demand per day ~ Poisson(choice-model rate), capped at seats left.
     rival: one price held for all days, or an array indexed by day (the forecast rival path).
@@ -1138,6 +1253,8 @@ def _dp_values(theta, rival, start_day, selling_share=None, copier=False):
     for t in range(TOTAL_SELLING_PERIODS, start_day - 1, -1):
         tau = (t - 1) / float(TOTAL_SELLING_PERIODS - 1)
         rival_today = DP_PRICE_GRID if copier else rival_by_day[t]
+        if react is not None:                                  # v6.8: rival follows our price
+            rival_today = np.clip(react[0] + react[1] * DP_PRICE_GRID, react[2], react[3])
         pmf = _poisson_pmf(_logit_rate(theta, DP_PRICE_GRID, rival_today, tau), k, fact)
         if selling_share is not None and selling_share[t] < 0.999:
             alone = _poisson_pmf(_logit_rate(theta, DP_PRICE_GRID, 1000.0, tau), k, fact)
@@ -1180,14 +1297,38 @@ def _dp_monopoly_price(period, seats_left, state):
     return float(cache["POL"][period][seats_left])
 
 
+def _rival_follower(state):
+    """
+    v6.8: (alpha, beta, lo, hi) when the rival follows our price, else None.
+    From the reaction model  rival_t = a + c * rival_{t-1} + b * our_{t-1}:  if we hold price p, the rival
+    settles at  r(p) = a / (1 - c) + b / (1 - c) * p  (kept inside the range of rival prices seen).
+    A follower is a rival with steady-state slope b / (1 - c) >= LEADER_MIN_BETA.
+    """
+    if not LEADER_PRICING or _rival_is_copier(state):
+        return None
+    model = state.get("rival_model") or {}
+    reaction = model.get("reaction")
+    if not reaction:
+        return None
+    a, c, b = reaction
+    if c >= 0.95:
+        return None
+    beta = b / (1.0 - c)
+    if beta < LEADER_MIN_BETA:
+        return None
+    lo, hi = model["range"]
+    return (a / (1.0 - c), beta, lo, hi)
+
+
 def _dp_seat_value(period, seats_left, rival_price, state):
     """mu = value of keeping one more seat after today: V[t+1][s] - V[t+1][s-1].
     Also sets state["dp_price"], today's price."""
     if not state.get("logit_fitted", False) or seats_left <= 0:
         return None
     cache = state.get("dp_cache")
+    follower = _rival_follower(state)
     stale = (cache is None or cache["season"] != state.get("last_season_seen") or period - cache["day"] >= DP_REFRESH_DAYS
-             or cache["theta"] != state["logit_theta"])
+             or cache["theta"] != state["logit_theta"] or cache.get("follower") != follower)
     if stale:
         if RIVAL_PATH_IN_DP:
             rival, share = _forecast_rival_path(period, state)
@@ -1196,12 +1337,13 @@ def _dp_seat_value(period, seats_left, rival_price, state):
         else:
             recent = state.get("rival_recent_prices", [])
             rival, share = (float(np.mean(recent[-5:])) if recent else float(rival_price)), None
-        V, POL = _dp_values(np.array(state["logit_theta"]), rival, period, share)
-        cache = {"season": state.get("last_season_seen"), "day": period, "theta": list(state["logit_theta"]), "V": V, "POL": POL}
+        V, POL = _dp_values(np.array(state["logit_theta"]), rival, period, share, react=follower)
+        cache = {"season": state.get("last_season_seen"), "day": period, "theta": list(state["logit_theta"]), "V": V, "POL": POL,
+                 "follower": follower}
         state["dp_cache"] = cache
     V = cache["V"]
     state["dp_price"] = float(cache["POL"][period][seats_left])
-    if NLP_PRICE:
+    if NLP_PRICE and follower is None:
         today = _rival_today(state, rival_price, period)
         state["dp_price"] = _solve_price_today(period, seats_left, today, V[period + 1], state)
     return float(V[period + 1][seats_left] - V[period + 1][seats_left - 1])
@@ -1264,6 +1406,14 @@ COPIER_DP_MAX_M = 150.0        # ... while the fitted willingness-to-pay midpoin
 RIVAL_UNCERTAINTY_TODAY = True # v6.7: today's price maximises revenue averaged over the rival's recent forecast errors
 RIVAL_ERR_WINDOW = 60          # forecast errors kept (days)
 RIVAL_ERR_MIN = 20             # errors needed before they are used
+COPIER_UNLATCH = True          # v6.8: on days we held our price, a rival price != our price counts against "copier"
+COPIER_PRICE_MAX = 80.0        # v6.8: copier DP may price up to $80 (v6.7: $60)
+LEADER_PRICING = False         # v6.8, NOT adopted: price as the leader on a following rival's reaction
+LEADER_MIN_BETA = 0.5          # ... steady-state slope of the rival's price on ours needed to count as a follower
+COOP_PRICING = True            # v6.8: when capacity is slack, offer the price that is best if the rival matches us
+COOP_PATIENCE = 3              # ... undercut days before we return to the best reply for the rest of the season
+COOP_RETRY = 10                # ... if cooperative seasons earned less than the others, retry every 10 seasons
+COOP_MIN_FOLLOW = 0.3          # ... only against a rival that follows our price (reaction slope), or in a floor war
 
 
 def _rival_was_selling(day, state):

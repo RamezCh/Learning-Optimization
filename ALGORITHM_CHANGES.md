@@ -1186,3 +1186,44 @@ analytics data), `tests/test_v64_market_sizing.py` (copier test: DP price instea
 `analytics/testbed.py` (any data folder), `analytics/oracle.py`, `analytics/evaluate.py`,
 `analytics/write_evaluation_md.py`, `analytics/merge_testbed_v67.py`, `analytics/parse_simulator_v67.py`,
 `EVALUATION.md` (v6.7), `EVALUATION_v6.6.md` (archive), `imgs/v67_*.png`.
+
+---
+
+## 25. v6.8: Rivals That React to Us (`data/v6.7`)
+
+### 25.1 What the v6.7 tournaments showed
+
+Six files, 210 matches, all played by v6.7 under three accounts (AirborneTody, DeftDalmatian, ProficientCivet), which met each other in 28 match-files.
+
+- **Selling out is not a flaw.** v6.7 sold out in 36% of seasons; the perfect-information DP sells out in 38.7% of the same seasons and leaves as many seats unsold (24.9 vs 25.3). Median sell-out day 98; per-match correlation with the DP 0.94.
+- Efficiency: 93.1% of the perfect-information DP, 96.8% of the fair DP. The daily duopoly price matches the fair DP (median gap \$0).
+- **Price wars to the \$18 floor:** 16 of the 28 match-files between our accounts sat at \$18 for ~100 seasons. With capacity slack, v6.7 prices at the static best reply; with the fitted sensitivity the one-shot equilibrium lies below \$18. The reaction model had learned that the rival follows us, but the price ignored it.
+- **Copier flag could never clear** (checks only on days our price moved; the copier price is flat): false flags in qPw7uh and 3Ppuun held us at \$60 (−18% to −22% per season).
+- **Copier price capped at \$60** while the copier DP wanted \$64–\$67.
+
+### 25.2 Changes
+
+| # | Change | Flag |
+| :---: | :--- | :--- |
+| 1 | A day on which we held our price and the rival posted a different one counts against "copier" | `COPIER_UNLATCH` |
+| 2 | Copier DP price up to \$80 | `COPIER_PRICE_MAX` |
+| 3 | Cooperative offer with a price-war evidence gate (rival follows us with slope ≥ 0.3, both at the floor last season, or cooperation held); match a rival between halfway and the offer; best reply after 3 undercut days; kept only while it earns at least as much as best-reply seasons, else every 10th season | `COOP_PRICING`, `COOP_PATIENCE`, `COOP_RETRY`, `COOP_MIN_FOLLOW` |
+| – | Leader pricing on the reaction model (tested, **not adopted**: self-play +11.8% with it, +15.1% without) | `LEADER_PRICING = False` |
+
+### 25.3 Results
+
+| Check | v6.8 vs v6.7 |
+| :--- | :---: |
+| Self-play, 9 markets where our accounts met (simulator reproduces the logs to −0.7%) | **+15.1%** |
+| … floor-war markets | +9% to +107% |
+| … high-demand markets | 0% to +2% |
+| Self-play 3Ppuun, 60 seasons (false copier flag) | +9.1% |
+| One side upgraded (v6.8 vs v6.7) | −0.2% / +0.3% |
+| Test bed, logged rivals, data/v6.7 / v6.6 / v6.5, 20 seasons | +0.02% / −0.05% / −0.01% |
+| Test bed, copier matches, 100 seasons | +0.8% (49XLgV, 3Cn7kh +2.8% to +2.9%) |
+
+Without the evidence gate, cooperation attempts cost −2.99% on the 12 most affected matches against logged rivals. Also measured: v6.7 vs v6.6 on the new matches +4.86% (the last evaluation expected +1% to +3%).
+
+### 25.4 Files
+
+`duopoly.py` (v6.8), `analytics/experiments/duopoly_v67.py` (previous version), `analytics/selfplay.py`, `analytics/selfplay_markets.py` (new self-play simulator), `analytics/review_v67/` (analysis scripts and result tables), `analytics/demand_fits_v6.7.json`, `analytics/oracle_v6.7.csv`, `tests/test_v68_reacting_rivals.py` (10 tests; 65 in total), `EVALUATION.md` (v6.8), `EVALUATION_v6.7.md` (archive), `REVIEW_v6.7.md`, `imgs/v68_*.png`.
