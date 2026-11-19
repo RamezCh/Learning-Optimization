@@ -16,6 +16,7 @@
 | One quality number | **Self-play** on the 9 markets where our accounts met (simulator reproduces the real logs to −0.7%): **+15.1%** revenue, floor-war markets +10% to +104%, high-demand markets 0% to +2% (section 9). |
 | Cost against rivals that ignore us | Test bed with logged rivals: **+0.02%** on data/v6.7, −0.05% on data/v6.6, −0.01% on data/v6.5 (20 seasons each) (section 8). |
 | Where is the money? | 96–98% of the perfect-information DP against every rival type except our own accounts (78%); medium markets between our own accounts 54% (section 12). Reaction rule: copiers, followers and non-reactors are separable, but cooperating with followers does not pay (section 13). |
+| How is the price found? Ablation? | Dynamic programme over days × seats (exact for random demand), NLP for today's price, LP only to fit the rival's reaction. An LP with a capacity constraint instead of the DP: −0.12%. Without the DP: −10.5%. Rival forecasting +1%, NLP +0.5%. Copier logic mixed: the held copier price stops the demand model from learning (sections 14, 15). |
 | Honest expectation | Against rivals that ignore our price: nothing changes. Against our own accounts: large gains in poor markets. Against classmates that follow us: unknown until tested online (section 11). |
 
 ## 2. The algorithm
@@ -260,7 +261,65 @@ Followers move the way we move but do not hold a matched price, so a cooperative
 
 A first rival simulation that reacted only to the level of our price showed +1.24% for cooperation. That was an artifact: those simulated rivals followed our direction far less than the real ones did (0.04 vs 0.24–0.40). Adding the "our last change" term brought them to 0.15–0.25 and removed the gain.
 
-## 14. Reproduce
+## 14. How the optimal price is found
+
+It is **not one linear programme**. Each step uses the optimization method that fits it:
+
+| Step | Problem | Method | Constraints |
+| :--- | :--- | :--- | :--- |
+| Demand model | Choose $(n, m, b, k)$ to maximise the Poisson likelihood of our daily sales | Nonlinear optimization (Nelder–Mead) | $m \le \$150$ as a penalty; priors as a ridge penalty |
+| Rival reaction | Choose $(a, c, b)$ in $r_t = a + c\,r_{t-1} + b\,p_{t-1}$ minimising $\sum \lvert \text{error} \rvert$ | **Linear programme** (`scipy.optimize.linprog`): $\min \sum D_i$ s.t. $y - Xb \le D$, $-(y - Xb) \le D$, $D \ge 0$ | $0 \le c, b \le 1.5$ |
+| Price plan for the rest of the season | $V(t,s) = \max_p E[\,p\min(D,s) + V(t+1, s-\min(D,s))\,]$, $D \sim$ Poisson(rate$(p, r_t)$) | **Dynamic programme** (Bellman equation, backward induction from day 100), exhaustive search over \$18, \$19, …, \$100 in every (day, seats) state | Capacity: sales $= \min(D, s)$, seats never below 0; price bounds \$18–\$100 |
+| Today's price | Same objective for today, with the rival's possible prices today | **Nonlinear programme**: bounded scalar solver within ±\$1 of the best grid price | Price bounds |
+| Is capacity binding? | Expected demand at revenue-maximising prices vs seats left | Check of the capacity constraint; if slack (≤ 90%), the seat value μ = 0 and price = $\arg\max_p p \cdot \text{rate}(p)$ | – |
+
+**Why a DP and not an LP.** The textbook LP for this problem (deterministic, "fluid" model) is:
+
+$$\max_x \sum_{d,p} p\,\lambda_{d,p}\,x_{d,p} \quad \text{s.t.} \quad \sum_p x_{d,p} = 1 \;\; \forall d, \qquad \sum_{d,p} \lambda_{d,p}\,x_{d,p} \le \text{seats left}, \qquad x \ge 0$$
+
+Here $\lambda_{d,p}$ is expected sales on day $d$ at price $p$. The dual value of the capacity constraint is the **seat value μ** (bid price), and today's price maximises $(p - \mu)\cdot\lambda_{\text{today},p}$. The LP replaces random demand by its expectation. The DP prices the randomness exactly: what a seat is worth depends on how many are left *after* today's random sales. In the DP, the seat value μ is $V(t+1, s) - V(t+1, s-1)$, the stochastic version of the LP's shadow price.
+
+**Tested** (`analytics/experiments/duopoly_v68_lp.py`): the LP re-solved every day replaces the DP. It is solved through its one-variable dual, which gives the same seat value as `linprog` to \$0.01 and is about 100× faster.
+
+| | DP (v6.8) | LP with capacity constraint |
+| :--- | :---: | :---: |
+| Test bed, 105 matches × 20 seasons | – | **−0.12%** (95%: −0.19% to −0.06%; 0 better / 5 worse; worst −1.0%) |
+| Sell-out rate | 37.2% | 33.0% |
+| Self-play, 9 markets | – | +2.1% |
+
+The LP comes within 0.12% of the DP, as theory says it should (the re-solved fluid LP is asymptotically optimal). It sells out less because it ignores randomness: it does not price the risk of running out. The DP stays because it is never worse in the test bed. The +2.1% in self-play is within the seed-to-seed spread (one market, two seeds), but it is a candidate for a longer test.
+
+## 15. What each part is worth (ablation)
+
+Each rule, or a combination of rules, is switched off and the variant replays the same matches with the same buyers (`analytics/review_v67/ablation_variants.py`). Test bed: 105 of the 210 data/v6.7 matches (every second one), 20 seasons. Self-play: the 9 markets where our accounts met (section 9), against v6.8 vs v6.8 = \$2,683 per season.
+
+![](imgs/v68_ablation.png)
+
+| Switched off | Test bed vs v6.8 | 95% interval | Better / worse matches | Self-play |
+| :--- | :---: | :---: | :---: | :---: |
+| DP and market-size check (hand rules only, ~v6.3) | **−13.39%** | −17.2% to −9.9% | 2 / 84 | −17.2% |
+| Dynamic programme (hand-tuned seat value instead) | **−10.54%** | −14.5% to −6.7% | 1 / 49 | −18.9% |
+| (Switched **on**:) old guards, ±rival band and late clearance on top of the DP | **−9.82%** | −13.9% to −5.8% | 1 / 48 | – |
+| Monopoly DP + copier logic + cooperative offer | −4.80% | −7.7% to −2.3% | 12 / 27 | – |
+| DP with a flat rival, no NLP, no forecasts (v6.5 style) | −1.81% | −2.5% to −1.2% | 2 / 46 | – |
+| All rival forecasting | −1.01% | −1.6% to −0.6% | 5 / 32 | – |
+| Rival's forecast path in the DP | −0.87% | −1.4% to −0.5% | 4 / 27 | – |
+| Market-size check | −0.75% | −1.5% to −0.3% | 9 / 36 | −6.5% |
+| NLP refinement of today's price | −0.45% | −0.7% to −0.3% | 0 / 17 | – |
+| Monopoly DP (rival sold out) | −0.38% | −0.9% to −0.0% | 2 / 9 | – |
+| Averaging over the rival's forecast errors | −0.06% | −0.2% to +0.1% | 3 / 4 | – |
+| Reaction model for today's rival price | 0.00% | −0.0% to +0.1% | 1 / 2 | – |
+| Cooperative offer | +0.03% | −0.0% to +0.1% | 8 / 2 | **−12.7%** |
+| (Switched **on**:) sold-out-rival days kept in the demand data | +0.07% | −0.1% to +0.4% | 1 / 4 | – |
+| Copier logic | +0.17% | −0.6% to +1.1% | 4 / 13 | −0.6% |
+
+**What this says.**
+- **The DP is the core:** without it, −10.5% (test bed) and −18.9% (self-play). Putting the old hand rules back on top of it costs almost as much (−9.8%): the guards fight the DP's price.
+- **Forecasting the rival is worth about 1%,** NLP refinement 0.5%, the monopoly DP 0.4%. Two parts are worth nothing measurable and could be removed for simplicity: averaging over forecast errors and the reaction model for today's price.
+- **The cooperative offer is worth nothing against logged rivals and 12.7% in self-play,** which is what it was built for.
+- **Copier logic is mixed:** against perfect copiers it is worse in 4 matches, by up to 48% (4Xefup, 3xZGNH, 3Cn7kh), and better in 13 (up to 11%: YzE7qa, the floor-war markets). Cause: against a copier both prices are always equal and the held price never moves, so the demand model never learns the true willingness to pay. In 3Cn7kh (true $m \approx \$76$) the copier DP holds \$43 every season; with the copier logic off, prices move, the model learns, and the cooperative offer settles at \$65–\$68. **Fix candidate:** vary the held copier price between seasons (exploration) so the model can learn.
+
+## 16. Reproduce
 
 ```bash
 python analytics/oracle.py --data v6.7                                   # oracle efficiency, day table
@@ -274,4 +333,6 @@ python analytics/review_v67/reaction_rule.py v6.7                               
 python analytics/review_v67/fit_bots.py                                                     # simulated rivals
 python analytics/review_v67/bot_eval.py out.csv analytics/experiments/duopoly_v67.py duopoly.py --keys keys.txt
 python analytics/review_v67/situations.py                                                   # section 12
+python analytics/review_v67/ablation_variants.py                                            # section 15 variants
+python analytics/testbed.py --data v6.7 --seasons 20 --sample 2 --compare analytics/experiments/duopoly_v68_lp.py  # section 14
 ```
