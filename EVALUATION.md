@@ -1,6 +1,6 @@
 # Evaluation of the current algorithm (`duopoly.py` v6.8)
 
-> **This file always describes the current `duopoly.py`, evaluated on the latest tournament logs (`data/v6.7`, played by v6.7 under three accounts: AirborneTody, DeftDalmatian, ProficientCivet; 6 files, 210 matches × 100 seasons).** It covers what changed, how it is measured, how accurate the previous evaluation was (section 5), what is correlation and what is cause (section 7), how far the two simulations can be trusted (sections 8–9), and the weak points and how they were found (section 10).
+> **This file always describes the current `duopoly.py`, evaluated on the latest tournament logs (`data/v6.7`, played by v6.7 under three accounts: AirborneTody, DeftDalmatian, ProficientCivet; 6 files, 210 matches × 100 seasons).** It covers what changed, how it is measured, how accurate the previous evaluation was (section 5), what is correlation and what is cause (section 7), how far the two simulations can be trusted (sections 8–9), the weak points and how they were found (section 10), every situation with revenue against the optimum (section 12), and which rivals react to our price (section 13).
 >
 > Numbers come from `analytics/oracle.py`, `analytics/testbed.py`, `analytics/selfplay.py` / `analytics/selfplay_markets.py` and the scripts in `analytics/review_v67/`. The evaluation of v6.7, written before its tournaments, is archived in [`EVALUATION_v6.7.md`](EVALUATION_v6.7.md). History: [`ALGORITHM_CHANGES.md`](ALGORITHM_CHANGES.md) §25.
 
@@ -15,6 +15,7 @@
 | What changed in v6.8? | A copier flag that clears, a copier price up to $80, and a **cooperative offer**: with evidence of a price war, each season starts at the price that is best if the rival matches us, and keeps it while the rival does not undercut (section 2). Leader pricing on the rival's reaction model was tested and **not adopted**. |
 | One quality number | **Self-play** on the 9 markets where our accounts met (simulator reproduces the real logs to −0.7%): **+15.1%** revenue, floor-war markets +10% to +104%, high-demand markets 0% to +2% (section 9). |
 | Cost against rivals that ignore us | Test bed with logged rivals: **+0.02%** on data/v6.7, −0.05% on data/v6.6, −0.01% on data/v6.5 (20 seasons each) (section 8). |
+| Where is the money? | 96–98% of the perfect-information DP against every rival type except our own accounts (78%); medium markets between our own accounts 54% (section 12). Reaction rule: copiers, followers and non-reactors are separable, but cooperating with followers does not pay (section 13). |
 | Honest expectation | Against rivals that ignore our price: nothing changes. Against our own accounts: large gains in poor markets. Against classmates that follow us: unknown until tested online (section 11). |
 
 ## 2. The algorithm
@@ -180,7 +181,86 @@ Two algorithms are loaded as separate modules with separate states. Each day bot
 - **Against classmates that follow us:** the gate lets cooperation start; it either holds (gain) or breaks after 3 days (small loss, then retried at most every 10th season if it keeps losing). Size unknown.
 - DPC rank is noisy; compare revenue per match against the same rivals, not ranks.
 
-## 12. Reproduce
+## 12. Situations at a glance
+
+**What the algorithm does, in one paragraph.** Every day it (1) estimates our demand from our own sales with a choice model (how many buyers come, and how they split between us, the rival and no purchase at given prices), (2) forecasts the rival's price for today and the rest of the season, (3) solves a **dynamic programme** over days left × seats left. That DP tells it what one more seat is worth tomorrow, so today's price balances selling now against keeping a seat for later. Special cases: when the rival is sold out it prices as a monopolist; when the rival copies us it prices as if the rival will match; and since v6.8, when two bots are stuck undercutting each other, it offers a matched price and keeps it while the rival does.
+
+**Two benchmarks.** *Perfect-information DP*: knows the match's demand and this season's rival prices in advance (an upper bound nobody can reach). *Fair DP*: knows the demand and the rival's typical prices only.
+
+![](imgs/v68_situations.png)
+
+### 12.1 By rival type (data/v6.7, all 100 seasons; type from section 13)
+
+| Rival type | Match-files | Share of our revenue | We earned / season | Perfect-info DP | Efficiency | Share of the gap to the fair DP | v6.8 vs v6.7 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| Ignores our price | 104 | 55.4% | \$2,316 | \$2,413 | 96.0% | −12% (we beat the fair DP) | +0.02% (test bed) |
+| Follows the direction of our price | 32 | 20.4% | \$2,776 | \$2,841 | 97.7% | −6% (we beat the fair DP) | +0.04% (simulated rivals) |
+| Copies our price | 14 | 7.5% | \$2,326 | \$2,420 | 96.1% | 9% | +0.8% (copier matches, 100 seasons; up to +2.9%) |
+| **Our own account** | 28 | 14.0% | **\$2,170** | \$2,779 | **78.1%** | **107%** | **+15.1% (self-play)** |
+| Dead market (prices hardly move) | 32 | 2.7% | \$367 | \$419 | 87.8% | 2% | ~0 |
+
+Against every rival type except our own accounts we earn 96–98% of the perfect-information DP. The rest of the gap there is the rival's unpredictable part (fair DP / perfect DP = 96.2%). We beat the fair DP against rivals that ignore or follow us because our forecast reacts to this season's rival prices, while the fair DP only knows the typical path. The missing money is almost all in matches between our own accounts.
+
+### 12.2 By market size (match's perfect-info revenue per season: poor < \$1,116 < medium < \$2,924 < rich)
+
+| Market | Match-files | Share of our revenue | We earned / season | Perfect-info DP | Efficiency | Typical situation |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| Rich | 70 | 66.0% | \$4,098 | \$4,280 | 95.8% | Seats sell out late; price \$45–\$75 |
+| Medium | 70 | 28.2% | \$1,753 | \$2,009 | 87.3% | Capacity slack; this is where price wars happen |
+| Poor | 70 | 5.8% | \$359 | \$381 | 94.2% | Few buyers; \$18 is often optimal |
+
+**Medium markets × our own account: 54% efficiency** (12 match-files, \$1,219 vs \$2,263 per season): the floor wars. Rich markets × our own account: 92%. Poor × our own account: 78%.
+
+### 12.3 By time and day type
+
+| Situation | Share | Efficiency / what happens |
+| :--- | :---: | :--- |
+| Season 1 | 1% of seasons | 81% of perfect-info: the demand model is fitted on day 50, guesses before that |
+| Season 2 | 1% | 90% |
+| Seasons 3–100 | 98% | 93–94% |
+| Days 1–30 / 31–70 / 71–90 / 91–100 | revenue 22% / 43% / 25% / 11% | – |
+| Rival sold out | 3.3% of days, 7.3% of revenue (avg price \$44.5) | We price ~\$10 above the fair DP on days 50–100 (open, section 10) |
+| We sit at the \$18 floor | 40.8% of days, 10.0% of revenue | On 96% of those days the fair DP also prices ≤ \$19 |
+| We are sold out | 1.5% of days | Sell-out rate equal to the perfect-info DP's (section 4.2) |
+
+### 12.4 Where suggestions would pay most
+
+1. **Our own accounts in medium markets** (54%): stabilise cooperation (section 9.2: plateaus at \$25 instead of ~\$45). Upper bound ≈ +\$1,000 per season in those 12 match-files.
+2. **Season 1** (81%): an earlier or better first demand fit. Small total: one season in 100.
+3. **Rival sold out** (7% of revenue, ~\$10 too high): small, and one fix was already rejected.
+4. Everything else is at 96–98% of the perfect-information DP, close to the 96% ceiling set by the rival's unpredictability.
+
+## 13. Does the rival react? (reaction rule)
+
+**Rule** (`analytics/review_v67/reaction_rule.py`). Only days on which our price moved by more than 2% count. On those days:
+- **copy**: is the rival's next price within 2% of our price yesterday?
+- **direction**: did it move the way we moved?
+- **best reply**: is it within 2% of the price that maximises its own revenue against our price (match's fitted choice model)?
+- **placebo**: the same checks with our price on the same day of another season. A rival that ignores us scores the placebo rate; reaction = score − placebo.
+
+Bands of 1%, 2% and 3% were tried. Copy excess: +0.08 / +0.09 / +0.08, so 2% is used (1% misses copies through rounding).
+
+| Type | Rivals | Copy − placebo | Direction − placebo |
+| :--- | :--- | :---: | :---: |
+| Exact copiers | BlueFalcon, UncoveredSwift, FlashyInchworm | +0.70 to +0.83 | +0.48 to +0.59 |
+| Partial copier | StirringWombat | +0.35 | +0.22 |
+| Our own accounts | AirborneTody, DeftDalmatian, ProficientCivet | +0.13 to +0.18 | +0.23 |
+| Follow our direction | RealLion, SuperGoshawk, CrystalTamarin, WonderfulOxpecker, ChirpyPython, FierceDuck, CautiousWaxbill, HumongousLocust | ≈ 0 | +0.17 to +0.29 |
+| Ignore us | KickassMoth, NiceFinch, DaringVole, ConvivialCrane, IntrepidBeluga, … | ≈ 0 | ≈ 0 |
+
+- **Nobody plays the best reply:** best-reply hits equal the placebo (0.7% vs 0.8% at 1%). Under our demand model the best reply is often below \$18; no bot goes there.
+- **Does acting on it pay?** Each rival was simulated from its logs: next price = f(its price, our price, our last change, day of season) plus its own residuals (`analytics/rival_bot.py`). Against these simulated rivals, v6.7 reproduces its logged revenue to a median of 2.1% per match (0.1% in total).
+
+| Simulated rivals, seasons 6–30, 2 seeds | v6.8 now | v6.8 with the reaction rule as the cooperation gate | Cooperation always allowed |
+| :--- | :---: | :---: | :---: |
+| Follow our direction (24 matches) | +0.04% | −0.10% | +0.01% |
+| Ignore us (13 matches) | −0.05% | −0.08% | −0.07% |
+
+Followers move the way we move but do not hold a matched price, so a cooperative offer earns nothing against them. The rule was therefore **not added to `duopoly.py`**. It is kept as an analysis tool.
+
+A first rival simulation that reacted only to the level of our price showed +1.24% for cooperation. That was an artifact: those simulated rivals followed our direction far less than the real ones did (0.04 vs 0.24–0.40). Adding the "our last change" term brought them to 0.15–0.25 and removed the gain.
+
+## 14. Reproduce
 
 ```bash
 python analytics/oracle.py --data v6.7                                   # oracle efficiency, day table
@@ -190,4 +270,8 @@ python analytics/selfplay_markets.py out.csv duopoly.py:duopoly.py analytics/exp
     --markets "3AbmmC,4RLfco,3ik5DA,4FFenv,YzE7qa,3R3Xgy,4Q7YNo,3NBvow,7CK3wb"
 python analytics/review_v67/v67_sellout.py; python analytics/review_v67/oracle_sellout.py   # section 4.2
 python analytics/review_v67/copycheck.py; python analytics/review_v67/reaction.py           # sections 5, 6
+python analytics/review_v67/reaction_rule.py v6.7                                           # section 13
+python analytics/review_v67/fit_bots.py                                                     # simulated rivals
+python analytics/review_v67/bot_eval.py out.csv analytics/experiments/duopoly_v67.py duopoly.py --keys keys.txt
+python analytics/review_v67/situations.py                                                   # section 12
 ```

@@ -21,6 +21,9 @@ import testbed as tb
 
 
 def _module(path, tag):
+    if path.startswith("bot:"):                       # simulated rival fitted to a logged match (analytics/rival_bot.py)
+        import rival_bot
+        return rival_bot.load(path[4:], seed=zlib.crc32((path + tag).encode()) % 10007)
     spec = importlib.util.spec_from_file_location("sp_%s_%d" % (tag, zlib.crc32(path.encode())), path)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 

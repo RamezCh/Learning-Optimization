@@ -1227,3 +1227,9 @@ Without the evidence gate, cooperation attempts cost −2.99% on the 12 most aff
 ### 25.4 Files
 
 `duopoly.py` (v6.8), `analytics/experiments/duopoly_v67.py` (previous version), `analytics/selfplay.py`, `analytics/selfplay_markets.py` (new self-play simulator), `analytics/review_v67/` (analysis scripts and result tables), `analytics/demand_fits_v6.7.json`, `analytics/oracle_v6.7.csv`, `tests/test_v68_reacting_rivals.py` (10 tests; 65 in total), `EVALUATION.md` (v6.8), `EVALUATION_v6.7.md` (archive), `REVIEW_v6.7.md`, `imgs/v68_*.png`.
+
+### 25.5 Reaction rule and situations (analysis, no change to `duopoly.py`)
+
+- **Reaction rule** (`analytics/review_v67/reaction_rule.py`): on days our price moved > 2%, does the rival land within 2% of our price (copy), move our way (direction), or land on its best reply? Each is compared with a placebo (our price on the same day of another season). It separates exact copiers, a partial copier, our own accounts, eight direction-followers and the rest. No bot plays the best reply.
+- **Simulated rivals** fitted to each match (`analytics/rival_bot.py`; v6.7 against them reproduces its logged revenue to a median of 2.1%). Against direction-followers a cooperative offer earns nothing (+0.04% v6.8; −0.10% with the reaction rule as the gate; +0.01% always cooperating), so the rule was not added to the algorithm.
+- **Situations** (`analytics/review_v67/situations.py`, EVALUATION.md section 12): 96–98% of the perfect-information DP against every rival type except our own accounts (78%; medium markets 54%).
